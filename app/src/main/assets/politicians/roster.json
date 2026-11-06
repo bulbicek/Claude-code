@@ -1,0 +1,22 @@
+[
+  {"id": "fico", "name": "Robert Fico", "wiki": "Robert Fico"},
+  {"id": "pellegrini", "name": "Peter Pellegrini", "wiki": "Peter Pellegrini"},
+  {"id": "caputova", "name": "Zuzana Čaputová", "wiki": "Zuzana Čaputová"},
+  {"id": "kiska", "name": "Andrej Kiska", "wiki": "Andrej Kiska"},
+  {"id": "matovic", "name": "Igor Matovič", "wiki": "Igor Matovič"},
+  {"id": "simecka", "name": "Michal Šimečka", "wiki": "Michal Šimečka"},
+  {"id": "kalinak", "name": "Robert Kaliňák", "wiki": "Robert Kaliňák"},
+  {"id": "sutaj", "name": "Matúš Šutaj Eštok", "wiki": "Matúš Šutaj Eštok"},
+  {"id": "danko", "name": "Andrej Danko", "wiki": "Andrej Danko"},
+  {"id": "rasi", "name": "Richard Raši", "wiki": "Richard Raši"},
+  {"id": "grohling", "name": "Branislav Gröhling", "wiki": "Branislav Gröhling"},
+  {"id": "korcok", "name": "Ivan Korčok", "wiki": "Ivan Korčok"},
+  {"id": "kollar", "name": "Boris Kollár", "wiki": "Boris Kollár"},
+  {"id": "remisova", "name": "Veronika Remišová", "wiki": "Veronika Remišová"},
+  {"id": "sulik", "name": "Richard Sulík", "wiki": "Richard Sulík"},
+  {"id": "heger", "name": "Eduard Heger", "wiki": "Eduard Heger"},
+  {"id": "uhrik", "name": "Milan Uhrík", "wiki": "Milan Uhrík"},
+  {"id": "bugar", "name": "Béla Bugár", "wiki": "Béla Bugár"},
+  {"id": "odor", "name": "Ľudovít Ódor", "wiki": "Ľudovít Ódor"},
+  {"id": "lajcak", "name": "Miroslav Lajčák", "wiki": "Miroslav Lajčák"}
+]
