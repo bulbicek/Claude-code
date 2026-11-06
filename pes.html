@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Zabav psa</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b1530;overflow:hidden;font-family:system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%}
+  #bar{position:fixed;top:0;left:0;right:0;display:flex;gap:6px;padding:8px;z-index:5}
+  #bar button{flex:1;padding:12px 4px;font-size:16px;border:0;border-radius:12px;background:#243b7a;color:#ffe066}
+  #bar button.on{background:#ffd23f;color:#0b1530;font-weight:700}
+  #sounds{position:fixed;inset:64px 8px 8px;display:none;grid-template-columns:1fr 1fr;gap:10px;z-index:4}
+  #sounds button{font-size:44px;border:0;border-radius:20px;background:#2d52b8;color:#fff}
+  #sounds button:active{background:#ffd23f}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="bar">
+  <button data-m="bug" class="on">🪲 Chrobák</button>
+  <button data-m="ball">🎾 Lopta</button>
+  <button data-m="snd">🔊 Zvuky</button>
+</div>
+<div id="sounds">
+  <button data-s="squeak">🐭<br><small>pískanie</small></button>
+  <button data-s="bird">🐦<br><small>vtáčik</small></button>
+  <button data-s="rustle">🍬<br><small>šuchot</small></button>
+  <button data-s="whistle">📯<br><small>hvizd</small></button>
+</div>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H;function rs(){W=cv.width=innerWidth;H=cv.height=innerHeight}rs();addEventListener('resize',rs);
+
+// ---- zvuk ----
+let ac;function A(){if(!ac)ac=new (window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();return ac}
+function tone(f1,f2,d,type='sine',v=.4,t0=0){const a=A(),o=a.createOscillator(),g=a.createGain(),t=a.currentTime+t0;
+  o.type=type;o.frequency.setValueAtTime(f1,t);o.frequency.exponentialRampToValueAtTime(f2,t+d);
+  g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(g).connect(a.destination);o.start(t);o.stop(t+d)}
+const S={
+  squeak(){const b=1500+Math.random()*1200;tone(b,b*1.8,.12,'square',.25);tone(b*1.6,b*.9,.1,'square',.2,.13)},
+  bird(){for(let i=0;i<4;i++)tone(2500+Math.random()*1500,3500+Math.random()*1500,.08,'sine',.35,i*.11)},
+  rustle(){const a=A(),n=a.sampleRate*.5,b=a.createBuffer(1,n,a.sampleRate),d=b.getChannelData(0);
+    for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(Math.random()<.08?1:.15)*(1-i/n);
+    const s=a.createBufferSource(),g=a.createGain();g.gain.value=.6;s.buffer=b;s.connect(g).connect(a.destination);s.start()},
+  whistle(){tone(1800,4200,.5,'sine',.35)}
+};
+document.querySelectorAll('[data-s]').forEach(b=>b.onpointerdown=e=>{e.stopPropagation();S[b.dataset.s]()});
+
+// ---- režimy ----
+let mode='bug';const snd=document.getElementById('sounds');
+document.querySelectorAll('#bar button').forEach(b=>b.onclick=()=>{
+  A();mode=b.dataset.m;document.querySelectorAll('#bar button').forEach(x=>x.classList.toggle('on',x===b));
+  snd.style.display=mode==='snd'?'grid':'none';if('wakeLock' in navigator)navigator.wakeLock.request('screen').catch(()=>{})});
+
+// chrobák
+const bug={x:W/2,y:H/2,tx:W/2,ty:H/2,pause:0,hit:0};
+function newTarget(){bug.tx=40+Math.random()*(W-80);bug.ty=110+Math.random()*(H-160)}
+// lopty
+let balls=[];function addBall(x,y){balls.push({x,y,vx:(Math.random()-.5)*10,vy:(Math.random()-.5)*10,r:26+Math.random()*16,c:Math.random()<.5?'#ffd23f':'#4aa3ff'})}
+for(let i=0;i<3;i++)addBall(W/2,H/2);
+
+cv.addEventListener('pointerdown',e=>{A();const x=e.clientX,y=e.clientY;
+  if(mode==='bug'){const d=Math.hypot(x-bug.x,y-bug.y);if(d<70){S.squeak();bug.hit=20;bug.pause=0;newTarget();bug.fast=1}else S.rustle()}
+  else if(mode==='ball'){let hit=false;for(const b of balls)if(Math.hypot(x-b.x,y-b.y)<b.r+25){b.vx=(b.x-x)/4;b.vy=(b.y-y)/4;S.squeak();hit=true}
+    if(!hit){addBall(x,y);if(balls.length>8)balls.shift()}}});
+
+function loop(){
+  ctx.fillStyle='rgba(11,21,48,.35)';ctx.fillRect(0,0,W,H);
+  if(mode==='bug'){
+    if(bug.pause>0)bug.pause--;
+    else{const dx=bug.tx-bug.x,dy=bug.ty-bug.y,d=Math.hypot(dx,dy),sp=bug.fast?14:5+Math.random()*3;
+      if(d<sp){bug.pause=20+Math.random()*50|0;bug.fast=0;newTarget()}
+      else{bug.x+=dx/d*sp+(Math.random()-.5)*3;bug.y+=dy/d*sp+(Math.random()-.5)*3}}
+    if(bug.hit>0)bug.hit--;
+    ctx.fillStyle='#ffd23f';ctx.beginPath();ctx.arc(bug.x,bug.y,18+bug.hit/2,0,7);ctx.fill();
+    ctx.fillStyle='#0b1530';ctx.beginPath();ctx.arc(bug.x,bug.y,7,0,7);ctx.fill();
+  } else if(mode==='ball'){
+    for(const b of balls){b.x+=b.vx;b.y+=b.vy;let bounce=false;
+      if(b.x<b.r){b.x=b.r;b.vx=Math.abs(b.vx);bounce=true}
+      if(b.x>W-b.r){b.x=W-b.r;b.vx=-Math.abs(b.vx);bounce=true}
+      if(b.y<b.r+60){b.y=b.r+60;b.vy=Math.abs(b.vy);bounce=true}
+      if(b.y>H-b.r){b.y=H-b.r;b.vy=-Math.abs(b.vy);bounce=true}
+      if(Math.abs(b.vx)+Math.abs(b.vy)<4){b.vx*=1.5;b.vy+=(Math.random()-.5)*6}
+      if(bounce&&Math.random()<.5)S.squeak();
+      ctx.fillStyle=b.c;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.fill()}
+  }
+  requestAnimationFrame(loop)}
+loop();
+</script>
+</body>
+</html>
