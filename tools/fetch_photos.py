@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DIR = ROOT / "app/src/main/assets/politicians"
 UA = "PolitPexeso/1.0 (hobby memory game; https://github.com/bulbicek/claude-code)"
-WIDTH = 480
+WIDTH = 500  # štandardná veľkosť náhľadu Wikimedie (https://w.wiki/GHai)
 WIKIS = ["sk.wikipedia.org", "en.wikipedia.org"]
 FREE = re.compile(r"^(CC[ -]|Public domain|PD|CC0)", re.I)
 
@@ -131,8 +131,20 @@ def main():
             thumb = f"{head}/wikipedia/commons/thumb/{tail}/{WIDTH}px-{name}"
         try:
             download(thumb, DIR / f"{p['id']}.jpg")
-        except OSError:
-            download(orig, DIR / f"{p['id']}.jpg")
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 404):  # náhľad sa nedá vytvoriť -> pôvodný súbor
+                try:
+                    download(orig, DIR / f"{p['id']}.jpg")
+                except OSError as e2:
+                    missing.append((p["name"], f"sťahovanie zlyhalo ({e2})"))
+                    continue
+            else:
+                missing.append((p["name"], f"sťahovanie zlyhalo (HTTP {e.code}), spusti skript znova"))
+                time.sleep(30)
+                continue
+        except OSError as e:
+            missing.append((p["name"], f"sťahovanie zlyhalo ({e}), spusti skript znova"))
+            continue
         credits[p["id"]] = {
             "author": strip_html(meta.get("Artist", {}).get("value", "")) or "neznámy autor",
             "license": lic,
