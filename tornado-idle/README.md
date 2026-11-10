@@ -11,7 +11,7 @@ Otvor `index.html` v prehliadači (funguje aj z `file://`, všetko je v jednom s
 - **Nový front** (prestíž): od ~200K škody resetuje postup za trvalý bonus ku škodám
 - **Supercela** (⚡ alebo medzerník): 10 s trojnásobná sila a vyššia rýchlosť, potom 75 s nabíjanie
 - **Úlohy**: krátke ciele s odmenou (ničenie budov, áut, mostov…)
-- **1–6** – nákup vylepšení, **M** – zvuk, ×1 / ×10 / MAX – množstvo nákupu
+- **1–6** – nákup vylepšení, **M** – zvuk, **C** alebo 🎬 – filmový vzhľad (zrno, farebné ladenie), ×1 / ×10 / MAX – množstvo nákupu
 - Postup sa ukladá (localStorage) a hra zarába aj offline (vylepšenie „Nočná zmena")
 
 ## Vývoj

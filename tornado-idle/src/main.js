@@ -36,7 +36,7 @@ function bakeTexture(c, repeatX) {
    Herný stav, vylepšenia, tiery budov
    ================================================================ */
 const SAVE_KEY = 'tornadoIdle.v1';
-const S = { money: 0, total: 0, life: 0, pts: 0, fronts: 0, destroyed: 0, cars: 0, bridges: 0, buys: 0, boosts: 0, qn: 0, qbase: 0, qgoal: 0, rate: 0, muted: false, qty: '1', time: Date.now(),
+const S = { money: 0, total: 0, life: 0, pts: 0, fronts: 0, destroyed: 0, cars: 0, bridges: 0, buys: 0, boosts: 0, qn: 0, qbase: 0, qgoal: 0, rate: 0, muted: false, cine: true, qty: '1', time: Date.now(),
   lv: { power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 } };
 try {
   const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
@@ -1693,9 +1693,21 @@ window.addEventListener('keydown', e => {
   if (e.key >= '1' && e.key <= '6') { const u = UPG[+e.key - 1]; if (u) buy(u); }
   else if (e.key === 'm' || e.key === 'M') setMuted(!S.muted);
   else if (e.key === ' ') { e.preventDefault(); useBoost(); }
+  else if (e.key === 'c' || e.key === 'C') setCine(!S.cine);
   lastInput = performance.now();
 });
 $('btn-mute').addEventListener('click', () => { audioInit(); setMuted(!S.muted); });
+// Filmový vzhľad: zrno + farebné ladenie + kontrast + vinetácia (len prekryvné vrstvy, žiadny ďalší prechod vykresľovania)
+{
+  const n = 128, cv = document.createElement('canvas'); cv.width = cv.height = n;
+  const g = cv.getContext('2d'), im = g.createImageData(n, n);
+  for (let i = 0; i < n * n; i++) { const v = 128 + (Math.random() + Math.random() - 1) * 120; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  $('grain').style.backgroundImage = `url(${cv.toDataURL()})`;      // dataURL – nezávisí od obsahu canvasu
+}
+function setCine(on) { S.cine = on; document.body.classList.toggle('cine', on); $('btn-cine').style.opacity = on ? 1 : .45; }
+$('btn-cine').addEventListener('click', () => { setCine(!S.cine); save(); });
+setCine(S.cine !== false);
 $('btn-reset').addEventListener('click', () => {
   modal(`<div class="lbl">Nová hra</div><h1>Začať <em>odznova</em>?</h1><p>Všetok postup vrátane prestíže sa stratí.</p><button id="m-yes">ZMAZAŤ</button> <button id="m-no" style="background:#2a4a85;color:#fff">ZRUŠIŤ</button>`);
   $('m-no').onclick = closeModal;

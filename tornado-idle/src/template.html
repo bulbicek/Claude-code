@@ -15,6 +15,13 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a1a33;font-family:va
   -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 #c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
 #vig{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 58%,rgba(4,12,32,.4) 100%)}
+/* filmový vzhľad (dá sa vypnúť tlačidlom 🎬) */
+#grade,#grain{position:fixed;inset:0;pointer-events:none;display:none}
+body.cine #grade{display:block;mix-blend-mode:soft-light;background:linear-gradient(180deg,rgba(255,176,96,.20) 0%,rgba(255,200,150,.06) 45%,rgba(24,70,120,.24) 100%)}
+body.cine #grain{display:block;inset:-64px;opacity:.11;mix-blend-mode:overlay;background-size:160px 160px;animation:grain .5s steps(1) infinite}
+@keyframes grain{0%{transform:translate(0,0)}17%{transform:translate(-31px,19px)}33%{transform:translate(23px,-41px)}50%{transform:translate(-47px,-13px)}67%{transform:translate(37px,29px)}83%{transform:translate(-11px,-53px)}}
+body.cine #c{filter:contrast(1.09) saturate(1.14) brightness(.98)}
+body.cine #vig{background:radial-gradient(ellipse at 50% 45%,transparent 48%,rgba(3,8,22,.58) 100%)}
 #flash{position:fixed;inset:0;background:#dbe8ff;opacity:0;pointer-events:none;mix-blend-mode:screen}
 #fx{position:fixed;inset:0;pointer-events:none;overflow:hidden}
 .pop{position:absolute;left:0;top:0;font-weight:800;color:var(--yellow);text-shadow:0 2px 0 rgba(0,0,0,.55),0 0 8px rgba(0,0,0,.5);
@@ -129,13 +136,15 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a1a33;font-family:va
 <body>
 <canvas id="c"></canvas>
 <div id="vig"></div>
+<div id="grade"></div>
+<div id="grain"></div>
 <div id="flash"></div>
 <div id="fx"></div>
 
 <header id="top">
   <div class="brand"><span class="live"><i></i>LIVE</span><b>METEO</b><em>24</em></div>
   <div class="headline" id="headline">Tornádo · priamy prenos z postihnutej oblasti</div>
-  <div id="bar-btns"><button class="ib" id="btn-reset" title="Nová hra">↺</button><button class="ib" id="btn-mute" title="Zvuk (M)">🔊</button></div>
+  <div id="bar-btns"><button class="ib" id="btn-cine" title="Filmový vzhľad (C)">🎬</button><button class="ib" id="btn-reset" title="Nová hra">↺</button><button class="ib" id="btn-mute" title="Zvuk (M)">🔊</button></div>
   <div class="clock"><span id="clockIcon">⛈️</span><span id="clock">12:00</span></div>
 </header>
 
