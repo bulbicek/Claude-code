@@ -692,6 +692,28 @@ const PF = 700;
 const puffs = new Particles(PF, 7);
 const pf = { life: new Float32Array(PF), max: new Float32Array(PF), vx: new Float32Array(PF), vy: new Float32Array(PF), vz: new Float32Array(PF), s0: new Float32Array(PF), s1: new Float32Array(PF), a0: new Float32Array(PF) };
 let pn = 0;
+const fires = [];
+const FIRE_T = 6, SMOKE_T = 10, FIRE_TINT = [1, .55, .12], SMOKE_TINT = [1, 1, 1];
+function updateFires(dt) {
+  for (let i = fires.length - 1; i >= 0; i--) {
+    const f = fires[i]; f.t += dt;
+    if (f.t >= SMOKE_T) { fires.splice(i, 1); continue; }
+    if (f.t < FIRE_T) {                                   // plamene: malé, jasné, rýchlo stúpajú a zmenšujú sa
+      f.fa += dt * 28 * Math.min(1, (FIRE_T - f.t) * 1.2);
+      while (f.fa >= 1) {
+        f.fa -= 1;
+        const core = Math.random() < .3;                     // svetlé žlté jadro vs. oranžovo-červený plameň
+        FIRE_TINT[1] = core ? rand(.7, .9) : rand(.16, .42); FIRE_TINT[2] = core ? .25 : .03;
+        puff(f.x + rand(-.6, .6) * f.s * (core ? .5 : 1), rand(.2, .7), f.z + rand(-.6, .6) * f.s * (core ? .5 : 1), rand(-.3, .3), rand(2.4, 4.6), rand(-.3, .3), f.s * (core ? rand(.7, 1) : rand(1.3, 1.9)), f.s * .35, rand(.45, .9), 1, 1.2, FIRE_TINT);
+      }
+    }
+    f.sa += dt * 9 * Math.min(1, (SMOKE_T - f.t) * .6);      // dym: tmavý, pomaly sa rozpína a stúpa
+    while (f.sa >= 1) {
+      f.sa -= 1;
+      puff(f.x + rand(-.4, .4) * f.s, f.s * rand(.8, 1.6), f.z + rand(-.4, .4) * f.s, rand(-.4, .4), rand(1.8, 3), rand(-.4, .4), f.s * 1.2, f.s * rand(3, 4.2), rand(2.4, 3.6), .55, rand(.07, .16), SMOKE_TINT);
+    }
+  }
+}
 function puff(x, y, z, vx, vy, vz, s0, s1, life, a0, shade, tint) {
   const i = pn; pn = (pn + 1) % PF;
   puffs.pos[i * 3] = x; puffs.pos[i * 3 + 1] = y; puffs.pos[i * 3 + 2] = z;
@@ -1195,6 +1217,10 @@ function destroyBuilding(b) {
   cam.shake = Math.min(1.2, cam.shake + .08 + b.tier * .1);
   crashSound(b.tier);
   S.destroyed++; if (b.lot.kind === 'bridge') S.bridges++;
+  else if (fires.length < 8 && Math.random() < .22) {     // občas po budove ostane požiar
+    fires.push({ x: b.x, z: b.z, t: 0, s: clamp(b.def.w * .45, .9, 2.2), fa: 0, sa: 0 });
+    if (Math.random() < .3) news(pick(['Hasiči hlásia požiar v ruinách. Hasičská stanica tiež horí.', 'V troskách vypukol požiar. Dym je vidieť až za hranice okresu.', 'Horí. Hasiči sú na ceste, cesta však nie je na mieste.', 'Plameň v ruinách: plynári prosia obyvateľov, aby nefajčili.']));
+  }
   b.group.visible = false; cityGroup.remove(b.group);
   const lot = b.lot; lot.b = null; lot.timer = rand(16, 30);
   const rb = new THREE.Mesh(rubbleGeo, rubbleMat); rb.position.set(lot.x, lot.kind === 'bridge' ? -1.2 : 0, lot.z); rb.scale.set(b.def.w * 1.05, 1, b.def.d * 1.05); rb.rotation.y = lot.yaw !== undefined ? lot.yaw : rand(0, 3); rb.castShadow = true; rb.receiveShadow = true;
@@ -1427,6 +1453,7 @@ function update(dt) {
 
   updateCars(dt);
   updateDebris(dt);
+  updateFires(dt);
   updatePuffs(dt);
   updateSwirl(dt);
   updateFunnel(dt);
@@ -1823,11 +1850,26 @@ const FLAVOR = [
   'Tlak vzduchu klesá, nálada obyvateľov tiež.', 'Poisťovňa oznamuje, že už nikoho nepoistí. Nikdy.', 'Neodporúčame pikniky v okruhu 50 km od vírenia.',
   'Reportér hlási zo strechy domu. Dom už nie je.', 'Psy sa skrývajú, mačky to riešia po svojom.', 'Zber odpadu odložený. Odpad sa zbiera sám.',
   'Odborníci: „Čím väčší vietor, tým väčšie ťažkosti.“', 'Tornádo vraj radšej mieri na mrakodrapy. Má rado výhľady.', 'Slnečné prestávky sa dnes nepredpokladajú.',
+  'Realitná kancelária ponúka pozemky s výhľadom. Výhľad je teraz všade.', 'Miestny záhradkár: „Trampolínu som naposledy videl nad kostolom.“',
+  'Krava zo susednej dediny hlási pristátie. Je v poriadku, len zmätená.', 'Pocitová teplota: lietajúca.', 'Biometeorologická záťaž: áno.',
+  'Dáždnik dnes nepomôže. Ani zajtra.', 'Vodiči, pozor: v protismere letí garáž.', 'Pošta doručuje aj dnes. Kam, to nevie nikto.',
+  'Účes dňa: všetky naraz.', 'Susedia sa konečne spoznali. Stretli sa na tej istej streche.', 'Peľová situácia: peľ odletel aj so stromami.',
+  'Meteorológ odmieta komentár a drží sa stĺpa.', 'Školy zatvorené. Žiaci aj tak tvrdia, že úlohu im odfúklo.', 'Pes zjedol domácu úlohu? Nie, tentoraz naozaj tornádo.',
+  'Bielizeň vyvesená ráno už schne v susednom okrese.', 'Veterná elektráreň hlási rekordný výkon aj rekordnú vzdialenosť.', 'Stavebný úrad: „Kolaudácie dnes neprebiehajú. Nie je čo.“',
+  'Navigácia: „Po sto metroch odbočte. Alebo budete odbočení.“', 'Smetiari štrajkujú z princípu. Nemajú čo zbierať.', 'Výstraha tretieho stupňa. Štvrtý stupeň ešte nevymysleli.',
+  'Horoskop pre všetky znamenia: dnes vás niečo zdvihne.', 'Šarkaniáda sa ruší pre nadbytok vetra.', 'Kominár oznamuje, že komíny si dnes čistia samy.',
+  'Rybári hlásia úlovok. Chytili plot.', 'Ceny nehnuteľností klesajú. Doslova, z výšky.', 'Tornádo zatiaľ neodpovedalo na žiadosť o rozhovor.',
+  'Dnešná relácia vzniká v teréne. Štúdio je tiež v teréne, proti našej vôli.', 'Odporúčame vetrať. Vlastne nie, to sa vybaví samo.',
+  'Mestská polícia rozdáva pokuty za nesprávne parkovanie na strechách.', 'Babka z tretieho poschodia: „Za mojich čias fúkalo viac.“',
+  'Holuby dnes lietajú pozadu a hnevajú sa.', 'Dopravný podnik: autobus číslo 7 dnes premáva vzduchom.', 'Futbalový zápas prerušený. Lopta je v inom kraji, bránka tiež.',
+  'Kúpalisko hlási: voda z bazéna prší o dve ulice ďalej.', 'Predavač dáždnikov prvýkrát v živote uvažuje o inej práci.', 'Rosný bod sme stratili. Ak ho nájdete, vráťte ho na ústav.',
 ];
+let flavorBag = [];
+function nextFlavor() { if (!flavorBag.length) flavorBag = FLAVOR.slice().sort(() => Math.random() - .5); return flavorBag.pop(); }   // každá hláška raz, kým sa nevyčerpajú
 const tkq = []; let tkBusy = false; const tkEl = $('tk');
 function news(msg, prio) { if (tkq.length > 6) tkq.pop(); prio ? tkq.unshift(msg) : tkq.push(msg); if (!tkBusy) nextNews(); }
 function nextNews() {
-  const m = tkq.shift() || pick(FLAVOR); tkEl.textContent = m; tkBusy = true;
+  const m = tkq.shift() || nextFlavor(); tkEl.textContent = m; tkBusy = true;
   const cw = tkEl.parentElement.clientWidth; document.documentElement.style.setProperty('--cw', cw + 'px');
   const dur = (cw + tkEl.offsetWidth) / 120;
   tkEl.style.animation = 'none'; void tkEl.offsetWidth; tkEl.style.animation = `tk ${dur}s linear forwards`;
@@ -1885,7 +1927,7 @@ if (firstRun) {
 } else if (!offlineClaim(away, false)) { /* nič */ }
 
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;
