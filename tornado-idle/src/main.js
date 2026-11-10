@@ -36,30 +36,33 @@ function bakeTexture(c, repeatX) {
    Herný stav, vylepšenia, tiery budov
    ================================================================ */
 const SAVE_KEY = 'tornadoIdle.v1';
-const S = { money: 0, total: 0, life: 0, pts: 0, fronts: 0, destroyed: 0, cars: 0, bridges: 0, buys: 0, boosts: 0, qn: 0, qbase: 0, qgoal: 0, rate: 0, muted: false, cine: true, qty: '1', time: Date.now(),
+const S = { money: 0, total: 0, life: 0, pts: 0, fronts: 0, destroyed: 0, cars: 0, bridges: 0, buys: 0, boosts: 0, qn: 0, qbase: 0, qgoal: 0, rate: 0, muted: false, cine: null, qty: '1', time: Date.now(),
   lv: { power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 } };
 try {
   const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
   if (raw && (raw.v === 1 || raw.v === 2)) { Object.assign(S, raw.s); if (raw.v === 1) { S.pts = Math.min(S.pts || 0, 25); S.rate = 0; } S.lv = Object.assign({ power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 }, raw.s.lv); }
 } catch (e) { /* ignore */ }
 
-const dpsOf = l => 8 * Math.pow(1.22, l);
+const dpsOf = l => 8 * Math.pow(1.2, l);
 const UPG = [
-  { id: 'power', icon: '💨', name: 'Sila vetra', base: 12, g: 1.55, show: l => fmt(dpsOf(l)) + ' dmg/s' },
-  { id: 'radius', icon: '🌪️', name: 'Priemer vírenia', base: 25, g: 1.6, show: l => (2 * 2.6 * Math.pow(1.055, l)).toFixed(1) + ' m' },
-  { id: 'speed', icon: '🧭', name: 'Rýchlosť posunu', base: 40, g: 1.65, show: l => Math.min(30, 4.2 * Math.pow(1.05, l)).toFixed(1) + ' m/s' },
-  { id: 'storm', icon: '⚡', name: 'Búrka s bleskami', base: 300, g: 2.0, show: l => l === 0 ? 'vypnuté' : `${stormInterval(l).toFixed(1)} s · ×${stormCount(l)}` },
-  { id: 'value', icon: '💶', name: 'Poistné plnenia', base: 90, g: 1.95, show: l => '×' + fmt(Math.pow(1.2, l)) },
+  { id: 'power', icon: '💨', name: 'Sila vetra', base: 12, g: 1.6, show: l => fmt(dpsOf(l)) + ' dmg/s' },
+  { id: 'radius', icon: '🌪️', name: 'Priemer vírenia', base: 25, g: 1.7, max: 150, show: l => (2 * radiusAt(l)).toFixed(1) + ' m' },
+  { id: 'speed', icon: '🧭', name: 'Rýchlosť posunu', base: 40, g: 1.75, max: 30, show: l => speedAt(l).toFixed(1) + ' m/s' },
+  { id: 'storm', icon: '⚡', name: 'Búrka s bleskami', base: 300, g: 2.1, show: l => l === 0 ? 'vypnuté' : `${stormInterval(l).toFixed(1)} s · ×${stormCount(l)}` },
+  { id: 'value', icon: '💶', name: 'Poistné plnenia', base: 90, g: 2.05, show: l => '×' + fmt(Math.pow(1.2, l)) },
   { id: 'offline', icon: '🌙', name: 'Nočná zmena (offline)', base: 400, g: 2.6, max: 15, show: l => Math.round(offlineEff(l) * 100) + ' %' },
 ];
 const stormInterval = l => 7 / (1 + 0.18 * (l - 1));
 const stormCount = l => 1 + Math.floor((l - 1) / 6);
 const offlineEff = l => Math.min(1, 0.1 + 0.06 * l);
 const costOf = (u, l) => Math.floor(u.base * Math.pow(u.g, l));
-const radiusOf = () => 2.6 * Math.pow(1.055, S.lv.radius);
-const speedOf = () => Math.min(30, 4.2 * Math.pow(1.05, S.lv.speed));
-const prestigeMult = () => 1 + 0.2 * S.pts;
-const prestigeGain = () => Math.floor(Math.cbrt(S.total / 2e5));
+// polomer rastie čoraz pomalšie a blíži sa k stropu 22 m – tornádo nikdy neprerastie mapu
+const radiusAt = l => 2.6 + 19.4 * (1 - Math.pow(.98, l)), speedAt = l => Math.min(18, 4.2 * Math.pow(1.05, l));
+const radiusOf = () => radiusAt(S.lv.radius);
+const speedOf = () => speedAt(S.lv.speed);
+const PRESTIGE_BASE = 1e6, PRESTIGE_K = .15;
+const prestigeMult = () => 1 + PRESTIGE_K * S.pts;
+const prestigeGain = () => Math.floor(Math.cbrt(S.total / PRESTIGE_BASE));
 const valueMult = () => Math.pow(1.2, S.lv.value) * prestigeMult();
 const windKmh = () => 85 + 16 * S.lv.power;
 function efOf(k) {
@@ -75,11 +78,11 @@ function efOf(k) {
 
 const TIERS = [
   { name: 'Domček', w: 2.4, d: 2.4, h: 1.9, hp: 14, val: 7, roof: 'pitch', rows: 1, cols: 2, unlock: 0 },
-  { name: 'Rodinný dom', w: 3.4, d: 3.0, h: 2.7, hp: 40, val: 24, roof: 'pitch', rows: 2, cols: 3, unlock: 100 },
-  { name: 'Panelák', w: 4.6, d: 3.4, h: 6.6, hp: 160, val: 110, roof: 'flat', rows: 7, cols: 5, unlock: 1200 },
-  { name: 'Kancelárska budova', w: 4.2, d: 4.2, h: 11, hp: 700, val: 560, roof: 'setback', rows: 11, cols: 6, unlock: 15000 },
-  { name: 'Mrakodrap', w: 3.8, d: 3.8, h: 20, hp: 3600, val: 3200, roof: 'spire', rows: 20, cols: 5, unlock: 2.5e5 },
-  { name: 'Megaveža', w: 4.4, d: 4.4, h: 32, hp: 20000, val: 20000, roof: 'spire', rows: 30, cols: 6, unlock: 5e6 },
+  { name: 'Rodinný dom', w: 3.4, d: 3.0, h: 2.7, hp: 40, val: 24, roof: 'pitch', rows: 2, cols: 3, unlock: 150 },
+  { name: 'Panelák', w: 4.6, d: 3.4, h: 6.6, hp: 160, val: 110, roof: 'flat', rows: 7, cols: 5, unlock: 2500 },
+  { name: 'Kancelárska budova', w: 4.2, d: 4.2, h: 8.8, hp: 700, val: 560, roof: 'flat', rows: 9, cols: 6, unlock: 40000 },
+  { name: 'Mrakodrap', w: 3.8, d: 3.8, h: 16, hp: 3600, val: 3200, roof: 'flat', rows: 16, cols: 5, unlock: 1e6 },
+  { name: 'Megaveža', w: 4.4, d: 4.4, h: 25.6, hp: 20000, val: 20000, roof: 'flat', rows: 26, cols: 6, unlock: 3e7 },
 ];
 const WALLS = [
   ['#e8d9c5', '#d9a38a', '#c9d6b0', '#b7cbe0', '#e7c9c9', '#f0e6b8'],
@@ -91,19 +94,21 @@ const WALLS = [
 ];
 const ROOFS = ['#8a3b2e', '#6b4a3a', '#4d5a66', '#a05a3a', '#7a2f2f'];
 const unlockedTier = () => { let t = 0; TIERS.forEach((d, i) => { if (S.total >= d.unlock) t = i; }); return t; };
-const megaScale = () => S.total > 5e6 ? Math.pow(2, Math.floor(Math.log10(S.total / 5e6) * 1.5)) : 1;
+const megaScale = () => S.total > 3e8 ? Math.pow(2, Math.floor(Math.log10(S.total / 3e7))) : 1;
 
 /* ================================================================
    Renderer, scéna, kamera
    ================================================================ */
 const canvas = $('c');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-const LOW = matchMedia('(pointer:coarse)').matches || (navigator.hardwareConcurrency || 8) <= 4;
+const LOW = matchMedia('(pointer:coarse)').matches || (navigator.hardwareConcurrency || 8) <= 4;   // mobil / slabšie zariadenie
+document.body.classList.toggle('low', LOW);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !LOW, powerPreference: 'high-performance' });
 const BASE_PR = Math.min(window.devicePixelRatio || 1, LOW ? 1.5 : 2);
 let pr = BASE_PR;
 renderer.setPixelRatio(pr);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = LOW ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = !LOW;        // na mobile sa tiene prepočítavajú len každú druhú snímku
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 const scene = new THREE.Scene();
@@ -212,7 +217,7 @@ const riverTan = riverPts.map((p, i) => { const a = riverPts[Math.max(0, i - 1)]
 function distRiver(x, z) { let m = 1e9; for (const p of riverPts) { const d = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z); if (d < m) m = d; } return Math.sqrt(m); }
 
 // 3D koryto: breh klesá z úrovne terénu (0) na dno (BED) a voda stojí na WATER_Y
-const BED = -1.7, WATER_Y = -.55, BANK0 = RIVER_HALF + 3.4, BANK1 = RIVER_HALF - .6, GRID = 200;
+const BED = -1.7, WATER_Y = -.55, BANK0 = RIVER_HALF + 3.4, BANK1 = RIVER_HALF - .6, GRID = LOW ? 120 : 200;
 const riverCoarse = riverPts.filter((_, i) => i % 3 === 0), HF = new Float32Array((GRID + 1) * (GRID + 1));
 function terrainH(x, z) {
   let m = 1e9; for (const p of riverCoarse) { const d = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z); if (d < m) m = d; }
@@ -221,7 +226,7 @@ function terrainH(x, z) {
   return BED * (1 - smooth(BANK1, BANK0, distRiver(x, z))) * fade;
 }
 function heightAt(x, z) {                          // rýchly dotaz na výšku terénu (bilineárne z mriežky)
-  const u = clamp(x + 100, 0, GRID - .001), v = clamp(z + 100, 0, GRID - .001), i = u | 0, j = v | 0, a = u - i, b = v - j, w = GRID + 1;
+  const u = clamp((x + 100) * GRID / 200, 0, GRID - .001), v = clamp((z + 100) * GRID / 200, 0, GRID - .001), i = u | 0, j = v | 0, a = u - i, b = v - j, w = GRID + 1;
   return (HF[j * w + i] * (1 - a) + HF[j * w + i + 1] * a) * (1 - b) + (HF[(j + 1) * w + i] * (1 - a) + HF[(j + 1) * w + i + 1] * a) * b;
 }
 const ROADS = [], PLAZAS = [], PARKS = [], BRIDGES = [], JUNCTIONS = [], LOT_SPECS = [];
@@ -452,7 +457,7 @@ function windowTexture(def, tier) {
   return t;
 }
 const roofMats = {};
-const roofMat = hex => roofMats[hex] || (roofMats[hex] = new THREE.MeshStandardMaterial({ color: hex, roughness: .9 }));
+const roofMat = hex => roofMats[hex] || (roofMats[hex] = new THREE.MeshStandardMaterial({ color: hex, roughness: .9, vertexColors: true }));
 const wallMats = {};
 const winTex = TIERS.map((d, i) => windowTexture(d, i));
 function wallMat(tier, hex) {
@@ -468,21 +473,26 @@ const bodyGeo = TIERS.map(d => {   // zapečené "ambient occlusion" pri zemi a 
   return g;
 });
 const pyr = (d, hh) => { const g = new THREE.ConeGeometry(1, hh, 4, 1).rotateY(Math.PI / 4); g.scale(d.w / 2 / .7071 * 1.12, 1, d.d / 2 / .7071 * 1.12); g.translate(0, d.h + hh / 2, 0); return g; };
-const chimney = d => new THREE.BoxGeometry(.28, .7, .28).translate(d.w * .22, d.h + .95, d.d * .12);
-const roofGeo = [mergeGeometries([pyr(TIERS[0], 1.2), chimney(TIERS[0])]), mergeGeometries([pyr(TIERS[1], 1.6), chimney(TIERS[1])])];
-const slabGeo = TIERS.map(d => {   // plochá strecha + klimatizačné jednotky
-  const parts = [new THREE.BoxGeometry(d.w * 1.04, .22, d.d * 1.04).translate(0, d.h + .11, 0)];
-  if (d.roof !== 'pitch' && d.roof !== 'spire') {
-    parts.push(new THREE.BoxGeometry(d.w * .22, .35, d.d * .22).translate(-d.w * .25, d.h + .4, d.d * .22));
-    parts.push(new THREE.BoxGeometry(d.w * .16, .28, d.d * .3).translate(d.w * .26, d.h + .36, -d.d * .2));
+// Varianty budov: každá je JEDEN mesh s dvoma skupinami (steny, strecha) – menej volaní vykresľovania a viac rozmanitosti
+const VARIANTS = TIERS.map((d, t) => {
+  const B = (w, h, dd, x, y, z, col) => paintGeo(new THREE.BoxGeometry(w, h, dd).translate(x, y, z), col || '#ffffff');
+  const mk = (walls, roofs, top) => ({ geo: mergeGeometries([mergeGeometries(walls), mergeGeometries(roofs)], true), top });
+  const body = bodyGeo[t], H0 = d.h;
+  if (d.roof === 'pitch') { const hh = t ? 1.6 : 1.2; return [mk([body], [paintGeo(pyr(d, hh), '#ffffff'), B(.28, .7, .28, d.w * .22, H0 + .95, d.d * .12)], hh)]; }
+  const slab = () => B(d.w * 1.04, .22, d.d * 1.04, 0, H0 + .11, 0, '#4b5057');
+  const ac = () => [B(d.w * .22, .35, d.d * .22, -d.w * .25, H0 + .4, d.d * .22, '#6a7078'), B(d.w * .16, .28, d.d * .3, d.w * .26, H0 + .36, -d.d * .2, '#6a7078')];
+  const step = (k, hh, y0) => B(d.w * k, hh, d.d * k, 0, H0 + .22 + (y0 || 0) + hh / 2, 0);                        // nadstavba (steny)
+  const cap = (k, y) => B(d.w * k * 1.05, .18, d.d * k * 1.05, 0, H0 + .22 + y + .09, 0, '#4b5057');            // jej strecha
+  const spire = (hh, y0) => paintGeo(new THREE.ConeGeometry(.24, hh, 6).translate(0, H0 + .22 + y0 + hh / 2, 0), '#aab3bd');
+  const out = [mk([body], [slab(), ...ac()], .6)];                                                              // rovná strecha s klimatizáciou
+  if (t >= 3) out.push(mk([body, step(.62, H0 * .2)], [slab(), cap(.62, H0 * .2)], H0 * .2 + .4));               // jedna nadstavba
+  if (t >= 4) {
+    out.push(mk([body, step(.66, 1.6)], [slab(), cap(.66, 1.6), spire(H0 * .24, 1.8)], 2 + H0 * .24));          // korunka s ihlou
+    out.push(mk([body, step(.74, H0 * .16), step(.46, H0 * .14, H0 * .16)], [slab(), cap(.74, H0 * .16), cap(.46, H0 * .3)], H0 * .3 + .4));   // stupňovitá veža
+    out.push(mk([body, step(.5, H0 * .1)], [slab(), cap(.5, H0 * .1), spire(H0 * .12, H0 * .1 + .2), ...ac()], H0 * .22 + .6));              // úzka nadstavba s anténou
   }
-  return mergeGeometries(parts);
+  return out;
 });
-const setbackGeo = paintGeo(new THREE.BoxGeometry(TIERS[3].w * .62, 2.2, TIERS[3].d * .62).translate(0, TIERS[3].h + 1.1 + .2, 0), '#ffffff');
-const spireGeo = [null, null, null, null,
-  new THREE.ConeGeometry(.22, 4.5, 6).translate(0, TIERS[4].h + 2.25, 0),
-  new THREE.ConeGeometry(.28, 7, 6).translate(0, TIERS[5].h + 3.5, 0)];
-const crownGeo = [4, 5].map(t => paintGeo(new THREE.BoxGeometry(TIERS[t].w * .66, 1.6, TIERS[t].d * .66).translate(0, TIERS[t].h + .9, 0), '#ffffff'));
 const rubbleGeo = new THREE.BoxGeometry(1, .25, 1).translate(0, .125, 0);
 const rubbleMat = new THREE.MeshStandardMaterial({ color: 0x3f3a36, roughness: 1 });
 
@@ -537,21 +547,12 @@ function makeBuilding(lot, instant) {
   const mega = tier >= 4 ? megaScale() : 1;
   const wallHex = pick(WALLS[tier]);
   const g = new THREE.Group();
-  const body = new THREE.Mesh(bodyGeo[tier], [0, 1, 2, 3, 4, 5].map(i => i === 2 || i === 3 ? roofMat('#5a5f66') : wallMat(tier, wallHex)));
-  body.castShadow = body.receiveShadow = true;
-  g.add(body);
   let roofHex = pick(ROOFS);
-  if (def.roof === 'pitch') { const r = new THREE.Mesh(roofGeo[tier], roofMat(roofHex)); r.castShadow = true; g.add(r); }
-  else {
-    const r = new THREE.Mesh(slabGeo[tier], roofMat('#4b5057')); r.castShadow = true; g.add(r);
-    if (def.roof === 'setback') { const s = new THREE.Mesh(setbackGeo, wallMat(tier, wallHex)); s.castShadow = true; g.add(s); }
-    if (tier >= 4) {
-      const c = new THREE.Mesh(crownGeo[tier - 4], wallMat(tier, wallHex)); c.castShadow = true; g.add(c);
-      const sp = new THREE.Mesh(spireGeo[tier], roofMat('#aab3bd')); sp.castShadow = true; sp.position.y = .9; g.add(sp);
-    }
-  }
-  const sx = rand(.88, 1.12), sy = rand(.92, 1.12);
-  g.userData.base = new THREE.Vector3(sx, sy, sx);
+  const v = pick(VARIANTS[tier]), mesh = new THREE.Mesh(v.geo, [wallMat(tier, wallHex), roofMat(def.roof === 'pitch' ? roofHex : '#ffffff')]);
+  mesh.castShadow = mesh.receiveShadow = true;
+  g.add(mesh);
+  const tall = tier >= 3, sx = tall ? rand(.8, 1.15) : rand(.88, 1.12), sz = tall ? rand(.8, 1.15) : sx, sy = tall ? rand(.68, 1.2) : tier === 2 ? rand(.8, 1.2) : rand(.92, 1.12);   // vyššie budovy sa líšia viac
+  g.userData.base = new THREE.Vector3(sx, sy, sz);
   g.position.set(lot.x, 0, lot.z);
   g.rotation.order = 'XZY'; g.rotation.y = lot.yaw + (Math.random() < .5 ? 0 : Math.PI);   // tilt okolo svetových osí
   g.scale.setScalar(instant ? 1 : 0.001);
@@ -561,11 +562,11 @@ function makeBuilding(lot, instant) {
   const hp = def.hp * mega * rand(.9, 1.1);
   const b = {
     lot, tier, def, x: lot.x, z: lot.z, group: g, hp, max: hp, value: def.val * mega * rand(.9, 1.1), alive: true,
-    grow: instant ? 1 : 0, shake: 0, acc: 0, emitted: 0, chunks: 8 + tier * 9, r: Math.max(def.w, def.d) / 2 * Math.max(sx, 1),
-    h: def.h * sy + (tier >= 4 ? 5 : 0), wallHex, roofHex: def.roof === 'pitch' ? roofHex : '#5a5f66', lx: 0, lz: 0, earned: 0,
+    grow: instant ? 1 : 0, shake: 0, acc: 0, emitted: 0, chunks: 8 + tier * 9, r: Math.max(def.w, def.d) / 2 * Math.max(sx, sz, 1),
+    h: (def.h + v.top) * sy, wallHex, roofHex: def.roof === 'pitch' ? roofHex : '#5a5f66', lx: 0, lz: 0, earned: 0,
     glass: tier >= 3, sy, settled: false,
   };
-  g.scale.set(b.grow * sx, b.grow * sy, b.grow * sx);
+  g.scale.set(b.grow * sx, b.grow * sy, b.grow * sz);
   lot.b = b; buildings.push(b);
   return b;
 }
@@ -632,7 +633,7 @@ function writeTree(t, time) {
    ================================================================ */
 const MAXD = 2600;
 const debMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: .9, flatShading: true }), MAXD);
-debMesh.castShadow = true; debMesh.frustumCulled = false;
+debMesh.castShadow = !LOW; debMesh.frustumCulled = false;
 debMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(debMesh);
 const D = {};
@@ -678,7 +679,7 @@ class Particles {
   flush() { for (const k of ['position', 'aSize', 'aAlpha', 'aColor']) this.geo.attributes[k].needsUpdate = true; }
 }
 // vír (stály prstenec prachu okolo lievika)
-const SW = LOW ? 1300 : 2200;
+const SW = LOW ? 750 : 1600;
 const swirl = new Particles(SW, 6);
 const sw = { ang: new Float32Array(SW), t: new Float32Array(SW), rf: new Float32Array(SW), spd: new Float32Array(SW), sz: new Float32Array(SW), shade: new Float32Array(SW), cls: new Uint8Array(SW) };
 for (let i = 0; i < SW; i++) {   // 0 = mrak prachu, 1 = tmavé úlomky (silueta), 2 = prachová sukňa pri zemi
@@ -731,22 +732,22 @@ let R = radiusOf(), H = 14 + R * 4;
 const SHAPES = [   // [m, polomer pri zemi (×R, +c), polomer hore (×R, +c), exponent profilu, výška ×]
   [0, .10, .2, .28, .7, 1.0, 1.15],
   [.33, .20, .3, .55, 1.2, .6, 1.0],
-  [.66, .22, .3, 1.9, 2.5, 1.8, 1.0],
-  [1, .70, .6, 2.5, 3.0, .9, .85],
+  [.66, .22, .3, 1.6, 2.5, 1.8, 1.0],
+  [1, .70, .6, 1.9, 3.0, .9, .85],
 ];
-const SH = { m: .35, rbv: 1, rtv: 3, ex: 1, hf: 1, ropeT: rand(60, 100), ropeLeft: 0 };
+const SH = { m: .35, rbv: 1, rtv: 3, ex: 1, hf: 1, ropeT: rand(140, 220), ropeLeft: 0 };
 function applyShape() {
   let i = 0; while (i < SHAPES.length - 2 && SH.m > SHAPES[i + 1][0]) i++;
   const a = SHAPES[i], b = SHAPES[i + 1], k = clamp((SH.m - a[0]) / (b[0] - a[0]), 0, 1), L = (x, y) => lerp(x, y, k);
   SH.rbv = L(a[1], b[1]) * R + L(a[2], b[2]); SH.rtv = L(a[3], b[3]) * R + L(a[4], b[4]); SH.ex = L(a[5], b[5]); SH.hf = L(a[6], b[6]);
 }
 function updateShape(dt) {
-  if (SH.ropeLeft > 0) { SH.ropeLeft -= dt; if (SH.ropeLeft <= 0) { SH.ropeT = rand(80, 150); news('Tornádo opäť naberá silu a rozširuje sa.'); } }
-  else { SH.ropeT -= dt; if (SH.ropeT <= 0) { SH.ropeLeft = rand(9, 14); news(pick(['Tornádo sa zužuje do lana a vlní sa – nepodceňujte ho!', 'Pozor: tornádo sa mení na úzke lano, stále je však nebezpečné.'])); } }
-  let target = clamp(.2 + S.lv.power * .035, 0, .95) + .14 * Math.sin(time * .09) + .1 * Math.sin(time * .23 + 1.7);
+  if (SH.ropeLeft > 0) { SH.ropeLeft -= dt; if (SH.ropeLeft <= 0) { SH.ropeT = rand(170, 280); news('Tornádo opäť naberá silu a rozširuje sa.'); } }
+  else { SH.ropeT -= dt; if (SH.ropeT <= 0) { SH.ropeLeft = rand(24, 34); news(pick(['Tornádo sa zužuje do lana a vlní sa – nepodceňujte ho!', 'Pozor: tornádo sa mení na úzke lano, stále je však nebezpečné.'])); } }
+  let target = clamp(.2 + S.lv.power * .035, 0, .95) + .14 * Math.sin(time * .03) + .1 * Math.sin(time * .075 + 1.7);
   if (SH.ropeLeft > 0) target *= .1;
   if (boost.t > 0) target = 1;
-  SH.m += (clamp(target, 0, 1) - SH.m) * (1 - Math.exp(-dt * .6));
+  SH.m += (clamp(target, 0, 1) - SH.m) * (1 - Math.exp(-dt * (boost.t > 0 ? .7 : .14)));   // tvar sa mení pozvoľna (desiatky sekúnd)
   applyShape();
   H = (14 + R * 4) * SH.hf;
 }
@@ -828,7 +829,7 @@ const funnelLayers = [
   { sc: 1.0, op: .85, spd: 1.0, rep: 4, edge: .45, bias: .05, shadow: false },
   { sc: .8, op: .9, spd: 1.7, rep: 5, edge: .38, bias: .25, shadow: false },
   { sc: .52, op: .95, spd: 2.5, rep: 6, edge: .3, bias: .55, shadow: false },       // tmavé jadro
-].map((d, li) => {
+].filter((d, i) => !LOW || i !== 2).map((d, li) => {   // na mobile o jednu priehľadnú vrstvu menej
   const L = Object.assign(d, makeTube(ROWS, SEGS, d.rep, d.op, d.edge, d.bias, false));
   L.mesh.renderOrder = 2 + li; L.mesh.castShadow = d.shadow;
   L.mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
@@ -857,7 +858,7 @@ function updateFunnel(dt) {
     L.mat.uniforms.uOff.value -= dt * L.spd * .35;
     L.mat.uniforms.uDirtAmt.value = dirtAmt; L.mat.uniforms.uOp.value = L.op * opK;
   }
-  const vis = smooth(.5, .82, SH.m);
+  const vis = LOW ? 0 : smooth(.5, .82, SH.m);
   for (const V of subVortices) {
     V.mesh.visible = vis > .02; if (!V.mesh.visible) continue;
     V.mat.uniforms.uOp.value = .8 * vis; V.mat.uniforms.uOff.value -= dt * 2.2;
@@ -889,7 +890,7 @@ function cloudTex() {
 }
 const cTex = cloudTex();
 const clouds = [];
-for (let i = 0; i < 26; i++) {
+for (let i = 0; i < (LOW ? 12 : 26); i++) {
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cTex, color: 0x4a505a, transparent: true, opacity: .8, depthWrite: false, fog: false }));
   sp.renderOrder = 8;
   clouds.push({ sp, ang: rand(0, 6.3), rad: rand(.1, 1.0), hh: rand(0, 1), spd: rand(.04, .16) * (Math.random() < .5 ? 1 : -1), sz: rand(.8, 1.4) });
@@ -980,7 +981,7 @@ function updateCars(dt) {
 }
 const f3 = v => v.toFixed(3);
 const riverMat = new THREE.ShaderMaterial({
-  transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
+  transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide, defines: LOW ? {} : { HQ: 1 },
   uniforms: { uTime: { value: 0 }, uTint: { value: tubeTint }, uTop: skyUniforms.uTop, uHor: skyUniforms.uHor, uSunDir: skyUniforms.uSunDir, uSunCol: skyUniforms.uSunCol,
     uDeep: { value: new THREE.Color('#082c47') }, uShallow: { value: new THREE.Color('#3a8a9c') }, uFogC: { value: scene.fog.color }, uFogN: { value: 60 }, uFogF: { value: 400 } },
   vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv=uv; vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }',
@@ -990,10 +991,13 @@ const riverMat = new THREE.ShaderMaterial({
     float vn(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h21(i),h21(i+vec2(1.,0.)),f.x),mix(h21(i+vec2(0.,1.)),h21(i+vec2(1.,1.)),f.x),f.y); }
     vec3 skyAt(vec3 r){                                                           // odraz oblohy vrátane mrakov
       vec3 c=mix(uHor,uTop,pow(clamp(r.y,0.0,1.0),.55));
+      #ifdef HQ
       vec2 q=r.xz/(r.y+.2)*1.5+vec2(uTime*.012,uTime*.006);
       float n=vn(q)*.6+vn(q*2.3)*.4;
       float m=smoothstep(.38,.72,n)*smoothstep(.02,.3,r.y);
-      return mix(c,mix(uHor*.95,uTop*.55,smoothstep(.45,.85,n)),m*.8);
+      c=mix(c,mix(uHor*.95,uTop*.55,smoothstep(.45,.85,n)),m*.8);
+      #endif
+      return c;
     }
     void main(){
       float d=abs(vUv.x-.5)*2.0*${f3(RIVER_HALF + 2.4)};
@@ -1338,7 +1342,8 @@ function steer(dt) {
   const wantX = (dx / d + px * wob) * sp, wantZ = (dz / d + pz * wob) * sp;
   const k = 1 - Math.exp(-dt * 1.6);
   T.vx += (wantX - T.vx) * k; T.vz += (wantZ - T.vz) * k;
-  T.x = clamp(T.x + T.vx * dt, -WORLD, WORLD); T.z = clamp(T.z + T.vz * dt, -WORLD, WORLD);
+  const lim = WORLD + 2 - R * .6;                    // veľké tornádo ostáva celé na mape
+  T.x = clamp(T.x + T.vx * dt, -lim, lim); T.z = clamp(T.z + T.vz * dt, -lim, lim);
 }
 function commandTo(x, z) {
   manual = { x: clamp(x, -WORLD, WORLD), z: clamp(z, -WORLD, WORLD) }; manualHold = 0;
@@ -1660,10 +1665,10 @@ const presEl = (() => {
 })();
 function askPrestige() {
   const g = prestigeGain();
-  if (g < 1) { news('Nový front: potrebuješ aspoň 200K škody v tomto fronte.', true); return; }
+  if (g < 1) { news(`Nový front: potrebuješ aspoň ${fmt(PRESTIGE_BASE)} škody v tomto fronte.`, true); return; }
   modal(`<div class="lbl">Prestíž</div><h1>NOVÝ <em>FRONT</em></h1>
     <p>Z tornáda sa stane nová tlaková níž. Stratíš peniaze, vylepšenia a mesto sa postaví odznova, ale získaš trvalý bonus.</p>
-    <div class="big">+${g} 🌀</div><p>Bonus ku všetkým škodám: ×${prestigeMult().toFixed(1)} → <b>×${(1 + .2 * (S.pts + g)).toFixed(1)}</b></p>
+    <div class="big">+${g} 🌀</div><p>Bonus ku všetkým škodám: ×${prestigeMult().toFixed(1)} → <b>×${(1 + PRESTIGE_K * (S.pts + g)).toFixed(1)}</b></p>
     <button id="m-yes">NOVÝ FRONT</button> <button id="m-no" style="background:#2a4a85;color:#fff">ZRUŠIŤ</button>`);
   $('m-no').onclick = closeModal;
   $('m-yes').onclick = () => {
@@ -1680,7 +1685,7 @@ const QUESTS = [
   { text: () => 'Použi Supercelu ⚡', goal: () => 1, val: () => S.boosts },
   { text: n => `Spôsob škodu ${fmt(n)} €`, goal: () => Math.max(150, Math.round(S.rate * 90)), val: () => S.life },
 ];
-const questReward = () => Math.max(20 * (1 + S.qn), S.rate * 45);
+const questReward = () => Math.max(15 + 6 * S.qn, S.rate * 12);
 function startQuest() { const q = QUESTS[S.qn % QUESTS.length]; S.qgoal = q.goal(Math.floor(S.qn / QUESTS.length)); S.qbase = q.val(); }
 if (!S.qgoal) startQuest();
 function updateQuest() {
@@ -1719,7 +1724,7 @@ window.addEventListener('keydown', e => {
   if (e.key >= '1' && e.key <= '6') { const u = UPG[+e.key - 1]; if (u) buy(u); }
   else if (e.key === 'm' || e.key === 'M') setMuted(!S.muted);
   else if (e.key === ' ') { e.preventDefault(); useBoost(); }
-  else if (e.key === 'c' || e.key === 'C') setCine(!S.cine);
+  else if (e.key === 'c' || e.key === 'C') setCine(!document.body.classList.contains('cine'), true);
   lastInput = performance.now();
 });
 $('btn-mute').addEventListener('click', () => { audioInit(); setMuted(!S.muted); });
@@ -1731,9 +1736,9 @@ $('btn-mute').addEventListener('click', () => { audioInit(); setMuted(!S.muted);
   g.putImageData(im, 0, 0);
   $('grain').style.backgroundImage = `url(${cv.toDataURL()})`;      // dataURL – nezávisí od obsahu canvasu
 }
-function setCine(on) { S.cine = on; document.body.classList.toggle('cine', on); $('btn-cine').style.opacity = on ? 1 : .45; }
-$('btn-cine').addEventListener('click', () => { setCine(!S.cine); save(); });
-setCine(S.cine !== false);
+function setCine(on, user) { if (user) S.cine = on; document.body.classList.toggle('cine', on); $('btn-cine').style.opacity = on ? 1 : .45; }
+$('btn-cine').addEventListener('click', () => { setCine(!document.body.classList.contains('cine'), true); save(); });
+setCine(S.cine == null ? !LOW : S.cine);   // na mobile je filmový filter predvolene vypnutý (šetrí výkon)
 $('btn-reset').addEventListener('click', () => {
   modal(`<div class="lbl">Nová hra</div><h1>Začať <em>odznova</em>?</h1><p>Všetok postup vrátane prestíže sa stratí.</p><button id="m-yes">ZMAZAŤ</button> <button id="m-no" style="background:#2a4a85;color:#fff">ZRUŠIŤ</button>`);
   $('m-no').onclick = closeModal;
@@ -1770,7 +1775,7 @@ function refreshUI() {
   updateQuest();
   // prestíž
   const g = prestigeGain(), pe = presEl;
-  setHTML(pe.ef, g >= 1 ? `+${g} 🌀 · bonus ×${(1 + .2 * (S.pts + g)).toFixed(1)} <b>(teraz ×${prestigeMult().toFixed(1)})</b>` : `Potrebuješ ${fmt(2e5)} škody v tomto fronte · bonus teraz ×${prestigeMult().toFixed(1)}`);
+  setHTML(pe.ef, g >= 1 ? `+${g} 🌀 · bonus ×${(1 + PRESTIGE_K * (S.pts + g)).toFixed(1)} <b>(teraz ×${prestigeMult().toFixed(1)})</b>` : `Potrebuješ ${fmt(PRESTIGE_BASE)} škody v tomto fronte · bonus teraz ×${prestigeMult().toFixed(1)}`);
   setText(pe.buy, g >= 1 ? 'ZAČAŤ' : 'ZAMKNUTÉ');
   pe.el.classList.toggle('can', g >= 1);
 }
@@ -1926,6 +1931,7 @@ if (firstRun) {
   $('m-ok').onclick = () => { audioInit(); closeModal(); };
 } else if (!offlineClaim(away, false)) { /* nič */ }
 
+let frameNo = 0;
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
 window.__tornado = { fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
@@ -1938,11 +1944,12 @@ function frame(now) {
   updateCamera(dt); updateRain(dt); updatePops(dt); updateAudio(dt);
   hudT += dt; if (hudT > .1) { updateHUD(hudT); hudT = 0; }
   uiT += dt; if (uiT > .25) { refreshUI(); uiT = 0; }
-  radT += dt; if (radT > .08) { drawRadar(); radT = 0; }
+  radT += dt; if (radT > (LOW ? .16 : .08)) { drawRadar(); radT = 0; }
   saveT += dt; if (saveT > 5) { save(); saveT = 0; }
   // adaptívna kvalita
   fpsAcc += rdt; fpsN++; fpsT += rdt;
-  if (fpsT > 3) { const fps = fpsN / fpsAcc; if (fps < 28 && pr > .6) { pr = Math.max(.6, pr - .25); resize(); } fpsAcc = fpsN = fpsT = 0; }
+  if (fpsT > 3) { const fps = fpsN / fpsAcc; if (fps < (LOW ? 40 : 28) && pr > (LOW ? .75 : .6)) { pr = Math.max(LOW ? .75 : .6, pr - .2); resize(); } fpsAcc = fpsN = fpsT = 0; }
+  if (LOW) renderer.shadowMap.needsUpdate = (frameNo++ & 1) === 0;
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }

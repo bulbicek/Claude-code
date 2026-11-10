@@ -117,20 +117,62 @@ body.cine #vig{background:radial-gradient(ellipse at 50% 45%,transparent 48%,rgb
 .mbox button:hover{filter:brightness(1.1)}
 .mbox ul{text-align:left;margin:8px auto;padding-left:20px;color:#cfe2ff;font-size:13px;line-height:1.6}
 
-@media (max-width:860px){
-  #top{height:40px}.brand{font-size:16px;padding:0 8px 0 10px}.headline{display:none}.clock{margin-left:auto;font-size:13px;padding-left:22px}
-  #left{top:48px;left:8px;width:min(250px,60vw);gap:6px}
-  .card{padding:6px 10px}#money{font-size:26px}#money small{font-size:16px}.wind b{font-size:22px}.mini{display:none}
-  #radarwrap{position:fixed;right:8px;top:48px;padding:4px}#radar{width:84px;height:84px}#radarwrap .rl{display:none}
-  #panel{left:0;right:0;top:auto;bottom:42px;width:auto;height:178px;border-radius:10px 10px 0 0;border-top-width:4px}
-  .ph{padding:6px 10px 4px}
-  #upgrades{flex-direction:row;overflow-x:auto;overflow-y:hidden;padding-bottom:8px}
-  .up{min-width:220px;grid-template-columns:36px 1fr;grid-template-rows:auto auto}.up .ic{width:36px;height:36px;font-size:18px}
-  .up .buy{grid-column:1/3}
+/* ===== mobil na výšku: kompaktné UI, vylepšenia ako úzky pás dole ===== */
+@media (max-width:860px) and (orientation:portrait){
+  /* spoločné kompaktné prvky pre mobil */
+  .brand{font-size:14px;gap:6px;padding:0 20px 0 8px}.live{font-size:9px;padding:2px 5px}.headline{display:none}
+  .clock{margin-left:auto;font-size:11px;padding:0 8px 0 20px;gap:4px}#bar-btns{padding:0 4px;gap:3px}.ib{width:26px;height:24px;font-size:12px}
+  .card{padding:4px 8px;border-left-width:3px}.lbl{font-size:8px;letter-spacing:.1em}
+  #money{font-size:20px}#money small{font-size:13px}.sub{font-size:10px;margin-top:0}
+  .wind{margin-top:0}.wind b{font-size:17px}.wind span{font-size:10px}.ef{min-width:42px;padding:3px 7px;font-size:13px}.mini{display:none}
+  #q-text{font-size:11.5px;margin-top:0}#q-num{display:none}.bar{height:4px;margin-top:3px}
+  #boost{width:46px;height:46px;font-size:19px;border-width:2px}#boost small{font-size:8px;bottom:-14px}
+  .ph{padding:3px 8px 3px}.ph h2{font-size:10px}.qty button{font-size:9px;padding:2px 5px}
+  .up{padding:4px 6px;gap:5px;border-radius:5px}.up .ic{width:26px;height:26px;font-size:13px;border-width:1px}
+  .up .nm{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.up .nm i{font-size:9px;margin-left:4px}
+  .up .ef2{font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .up .buy{min-width:0;padding:4px 5px;font-size:11px;border-radius:4px}
   .pf{display:none}#hint{display:none}
-  #boost{width:58px;height:58px;font-size:22px}#q-text{font-size:13px}#q-num{display:none}
-  .tk-label{padding:0 16px 0 8px;font-size:12px}#tk{font-size:14px}
+  #ticker{height:28px;border-top-width:2px}.tk-label{padding:0 14px 0 8px;font-size:10px}#tk{font-size:12px}
+  .mbox{padding:14px 16px}.mbox h1{font-size:22px}.mbox p,.mbox ul{font-size:12px}.mbox .big{font-size:26px}.mbox button{font-size:14px;padding:9px 22px;margin-top:8px}
+  #top{height:34px;border-bottom-width:2px}
+  #left{top:40px;left:6px;width:min(190px,50vw);gap:4px}
+  #radarwrap{position:fixed;right:6px;top:40px;padding:3px}#radar{width:64px;height:64px}#radarwrap .rl{display:none}
+  #panel{left:0;right:0;top:auto;bottom:28px;width:auto;border-radius:8px 8px 0 0;border-top-width:3px}
+  #upgrades{flex-direction:row;overflow-x:auto;overflow-y:hidden;gap:6px;padding:0 6px 6px}
+  .up{min-width:138px;grid-template-columns:26px 1fr;grid-template-rows:auto auto}.up>div:nth-child(2){min-width:0}
+  .up .buy{grid-column:1/3}
 }
+/* ===== mobil na šírku: štatistiky vľavo, vylepšenia ako úzky stĺpec vpravo ===== */
+@media (orientation:landscape) and (max-height:540px){
+  /* spoločné kompaktné prvky pre mobil */
+  .brand{font-size:14px;gap:6px;padding:0 20px 0 8px}.live{font-size:9px;padding:2px 5px}.headline{display:none}
+  .clock{margin-left:auto;font-size:11px;padding:0 8px 0 20px;gap:4px}#bar-btns{padding:0 4px;gap:3px}.ib{width:26px;height:24px;font-size:12px}
+  .card{padding:4px 8px;border-left-width:3px}.lbl{font-size:8px;letter-spacing:.1em}
+  #money{font-size:20px}#money small{font-size:13px}.sub{font-size:10px;margin-top:0}
+  .wind{margin-top:0}.wind b{font-size:17px}.wind span{font-size:10px}.ef{min-width:42px;padding:3px 7px;font-size:13px}.mini{display:none}
+  #q-text{font-size:11.5px;margin-top:0}#q-num{display:none}.bar{height:4px;margin-top:3px}
+  #boost{width:46px;height:46px;font-size:19px;border-width:2px}#boost small{font-size:8px;bottom:-14px}
+  .ph{padding:3px 8px 3px}.ph h2{font-size:10px}.qty button{font-size:9px;padding:2px 5px}
+  .up{padding:4px 6px;gap:5px;border-radius:5px}.up .ic{width:26px;height:26px;font-size:13px;border-width:1px}
+  .up .nm{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.up .nm i{font-size:9px;margin-left:4px}
+  .up .ef2{font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .up .buy{min-width:0;padding:4px 5px;font-size:11px;border-radius:4px}
+  .pf{display:none}#hint{display:none}
+  #ticker{height:28px;border-top-width:2px}.tk-label{padding:0 14px 0 8px;font-size:10px}#tk{font-size:12px}
+  .mbox{padding:14px 16px}.mbox h1{font-size:22px}.mbox p,.mbox ul{font-size:12px}.mbox .big{font-size:26px}.mbox button{font-size:14px;padding:9px 22px;margin-top:8px}
+  #top{height:30px;border-bottom-width:2px}
+  #left{top:35px;left:6px;width:172px;gap:4px}
+  .lrow{gap:12px}#radarwrap{padding:3px}#radar{width:60px;height:60px}#radarwrap .rl{display:none}
+  #panel{top:35px;right:6px;bottom:32px;width:200px;border-top-width:3px}
+  #upgrades{gap:4px;padding:0 5px 5px}
+  .up{grid-template-columns:26px 1fr auto}.up>div:nth-child(2){min-width:0}
+  .up .buy{min-width:52px}
+  #ticker{height:26px}
+}
+/* slabšie zariadenia: bez rozmazania pozadia panelov (veľmi drahé nad 3D plátnom) */
+.low .card,.low #panel,.low #radarwrap,.low #modal{backdrop-filter:none}
+.low .card,.low #panel{background:rgba(7,25,61,.9)}
 </style>
 </head>
 <body>
