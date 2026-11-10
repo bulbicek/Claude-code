@@ -1016,9 +1016,7 @@ function askPrestige() {
   $('m-no').onclick = closeModal;
   $('m-yes').onclick = () => {
     S.pts += prestigeGain(); S.fronts++;
-    S.money = 0; S.total = 0; S.rate = 0;
-    for (const k in S.lv) S.lv[k] = 0;
-    save(); window.__noSave = true; location.reload();
+    newRun(); closeModal(); news('Nový front sa formuje! Mesto sa postavilo odznova.', true);
   };
 }
 function plan(u) {
@@ -1046,7 +1044,26 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'm' || e.key === 'M') setMuted(!S.muted);
 });
 $('btn-mute').addEventListener('click', () => { audioInit(); setMuted(!S.muted); });
-$('btn-reset').addEventListener('click', () => { if (confirm('Naozaj začať odznova? Všetok postup sa stratí.')) { localStorage.removeItem(SAVE_KEY); window.__noSave = true; location.reload(); } });
+$('btn-reset').addEventListener('click', () => {
+  modal(`<div class="lbl">Nová hra</div><h1>Začať <em>odznova</em>?</h1><p>Všetok postup vrátane prestíže sa stratí.</p><button id="m-yes">ZMAZAŤ</button> <button id="m-no" style="background:#2a4a85;color:#fff">ZRUŠIŤ</button>`);
+  $('m-no').onclick = closeModal;
+  $('m-yes').onclick = () => { S.pts = 0; S.fronts = 0; S.destroyed = 0; newRun(); closeModal(); };
+});
+// nový beh (prestíž / reset): vynuluje postup a postaví mesto odznova bez reloadu stránky
+function newRun() {
+  S.money = 0; S.total = 0; S.rate = 0; shownMoney = 0;
+  for (const k in S.lv) S.lv[k] = 0;
+  for (const b of buildings) cityGroup.remove(b.group);
+  buildings.length = 0; target = null; manual = null; marker.visible = false;
+  for (const lot of lots) {
+    if (lot.rubble) { cityGroup.remove(lot.rubble); lot.rubble = null; }
+    lot.b = null; lot.timer = 0;
+    if (!lot.park) makeBuilding(lot, true);
+  }
+  for (const t of trees) { t.alive = true; t.hp = t.max; t.grow = 1; t.dirty = true; t.shake = 0; }
+  tierSeen = unlockedTier(); megaSeen = megaScale(); R = radiusOf();
+  refreshUI(); save();
+}
 
 const setHTML = (el, v) => { if (el._v !== v) { el._v = v; el.innerHTML = v; } };
 const setText = (el, v) => { if (el._v !== v) { el._v = v; el.textContent = v; } };
