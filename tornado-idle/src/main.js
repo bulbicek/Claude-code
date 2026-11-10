@@ -108,10 +108,13 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xb9c4cf, 60, 400);
-const camera = new THREE.PerspectiveCamera(48, 1, 0.5, 2500);
+const camera = new THREE.PerspectiveCamera(48, 1, 1, 2500);
 const cam = { yaw: 0.65, pitch: 0.6, zoom: 1, dist: 40, tx: 0, tz: 0, shake: 0 };
 
 const HALF = 64, BLOCK = 16, NB = 8, WORLD = 92;
+const LAKES = [{ x: 76, z: -68, rx: 15, rz: 9 }, { x: -80, z: 62, rx: 12, rz: 8 }, { x: 70, z: 78, rx: 9, rz: 6 }];
+const inLake = (x, z, pad) => LAKES.some(l => Math.pow((x - l.x) / (l.rx + pad), 2) + Math.pow((z - l.z) / (l.rz + pad), 2) < 1);
+function paintGeo(g, col) { const c = new THREE.Color(col), n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; }
 let particleScale = 1000;
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -123,22 +126,49 @@ function resize() {
   document.documentElement.style.setProperty('--cw', $('tk').parentElement.clientWidth + 'px');
 }
 
-/* ---- obloha ---- */
-const skyUniforms = { uTop: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color() }, uGlow: { value: 0.3 } };
-const sky = new THREE.Mesh(new THREE.SphereGeometry(1200, 24, 12), new THREE.ShaderMaterial({
-  side: THREE.BackSide, depthWrite: false, fog: false, uniforms: skyUniforms,
-  vertexShader: 'varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-  fragmentShader: `uniform vec3 uTop,uHor,uSunCol,uSunDir; uniform float uGlow; varying vec3 vP;
-    void main(){ vec3 d=normalize(vP); float h=clamp(d.y,0.0,1.0);
-      vec3 c=mix(uHor,uTop,pow(h,0.55));
-      float s=max(dot(d,normalize(uSunDir)),0.0); c+=uSunCol*(pow(s,24.0)*0.6+pow(s,4.0)*0.15)*uGlow;
-      gl_FragColor=vec4(c,1.0); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
-}));
+/* ---- obloha (shader s mrakmi) + prostredie pre odlesky ---- */
+const SKY_FRAG = `uniform vec3 uTop,uHor,uGround,uSunCol,uSunDir; uniform float uGlow,uTime; varying vec3 vP;
+  float h21(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+  float vn(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+    return mix(mix(h21(i),h21(i+vec2(1.,0.)),f.x),mix(h21(i+vec2(0.,1.)),h21(i+vec2(1.,1.)),f.x),f.y); }
+  void main(){ vec3 d=normalize(vP); float y=d.y;
+    vec3 c=mix(uHor,uTop,pow(clamp(y,0.0,1.0),0.55));
+    if(y<0.0) c=mix(uHor,uGround,smoothstep(0.0,-0.25,y));
+    float s=max(dot(d,uSunDir),0.0); c+=uSunCol*(pow(s,24.0)*0.6+pow(s,4.0)*0.15)*uGlow;
+    if(y>0.02){
+      vec2 p=d.xz/(y+0.2)*1.5+vec2(uTime*0.012,uTime*0.006);
+      float n=vn(p)*0.55+vn(p*2.3)*0.3;
+      #ifdef HQ
+      n+=vn(p*5.1)*0.15;
+      #endif
+      float m=smoothstep(0.38,0.72,n)*smoothstep(0.02,0.3,y);
+      vec3 cc=mix(uHor*0.95,uTop*0.55,smoothstep(0.45,0.85,n));
+      c=mix(c,cc,m*0.8);
+    }
+    gl_FragColor=vec4(c,1.0); gl_FragColor=linearToOutputTexel(gl_FragColor); }`;
+const SKY_COL = { top: '#4d78a8', hor: '#aab9c6', ground: '#566448' };
+function makeSkyMat() {
+  return new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false, defines: LOW ? {} : { HQ: 1 },
+    uniforms: { uTop: { value: new THREE.Color(SKY_COL.top) }, uHor: { value: new THREE.Color(SKY_COL.hor) }, uGround: { value: new THREE.Color(SKY_COL.ground) },
+      uSunDir: { value: new THREE.Vector3(.5, .8, .3).normalize() }, uSunCol: { value: new THREE.Color('#fff0d8') }, uGlow: { value: .4 }, uTime: { value: 0 } },
+    vertexShader: 'varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: SKY_FRAG,
+  });
+}
+const skyMat = makeSkyMat(), skyUniforms = skyMat.uniforms;
+const sky = new THREE.Mesh(new THREE.SphereGeometry(1200, 24, 12), skyMat);
 sky.renderOrder = -10; sky.frustumCulled = false;
 scene.add(sky);
+{ // jednorazovo vypočítané prostredie: jemné okolité svetlo a odlesky na skle
+  const pm = new THREE.PMREMGenerator(renderer), es = new THREE.Scene();
+  es.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), makeSkyMat()));
+  scene.environment = pm.fromScene(es, 0, .1, 200).texture; scene.environmentIntensity = .55; pm.dispose();
+}
 
 /* ---- svetlá ---- */
-const hemi = new THREE.HemisphereLight(0xbcd2ee, 0x5a6b4a, 1.0);
+const HEMI_I = .6;
+const hemi = new THREE.HemisphereLight(0xbcd2ee, 0x5a6b4a, HEMI_I);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d8, 2.4);
 sun.castShadow = true;
@@ -169,6 +199,13 @@ function makeGround() {
     g.strokeStyle = 'rgba(0,0,0,.12)'; g.lineWidth = 1;
     for (let k = 0; k < w * 1.2; k++) { g.beginPath(); g.moveTo(px(x) + k / 1.2 * ppu, px(z)); g.lineTo(px(x) + k / 1.2 * ppu, px(z) + h * ppu); g.stroke(); }
   }
+  // jazerá
+  for (const l of LAKES) {
+    const cx = px(l.x), cz = px(l.z);
+    for (const [k, col] of [[1.18, '#cdbb8a'], [1.0, '#3d7fb0'], [.7, '#4a93c4'], [.4, '#5aa6d2']]) {
+      g.fillStyle = col; g.beginPath(); g.ellipse(cx, cz, l.rx * k * ppu, l.rz * k * ppu, 0.3, 0, 7); g.fill();
+    }
+  }
   // cesty vedúce von
   g.fillStyle = '#55595e';
   for (let k = 0; k <= NB; k++) {
@@ -192,12 +229,27 @@ function makeGround() {
     g.beginPath(); g.moveTo(p, 0); g.lineTo(p, SZ); g.stroke();
     g.beginPath(); g.moveTo(0, p); g.lineTo(SZ, p); g.stroke();
   }
+  // bordúry blokov a prechody pre chodcov
+  g.strokeStyle = 'rgba(40,40,40,.35)'; g.lineWidth = 3;
+  for (let bx = 0; bx < NB; bx++) for (let bz = 0; bz < NB; bz++) g.strokeRect(px(-HALF + bx * BLOCK + 2) - 3, px(-HALF + bz * BLOCK + 2) - 3, 12 * ppu + 6, 12 * ppu + 6);
+  g.fillStyle = 'rgba(235,235,225,.75)';
+  for (let i = 0; i <= NB; i++) for (let j = 0; j <= NB; j++) {
+    const x = px(-HALF + i * BLOCK), z = px(-HALF + j * BLOCK);
+    for (let k = -3; k <= 3; k++) {
+      g.fillRect(x + k * 11 - 3, z - 2.6 * ppu - 12, 6, 12); g.fillRect(x + k * 11 - 3, z + 2.6 * ppu, 6, 12);
+      g.fillRect(x - 2.6 * ppu - 12, z + k * 11 - 3, 12, 6); g.fillRect(x + 2.6 * ppu, z + k * 11 - 3, 12, 6);
+    }
+  }
+  for (let i = 0; i < 26000; i++) { // jemná zrnitosť
+    g.fillStyle = Math.random() < .5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.06)';
+    g.fillRect(rand(0, SZ), rand(0, SZ), randi(1, 3), randi(1, 3));
+  }
   const tex = bakeTexture(c); tex.anisotropy = 8;
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(W, W).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(W, W).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, roughness: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
   m.receiveShadow = true; m.matrixAutoUpdate = false;
   scene.add(m);
   const base = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x6d9a50, roughness: 1 }));
-  base.position.y = -0.05; base.receiveShadow = true; scene.add(base);
+  base.position.y = -0.45; base.receiveShadow = true; scene.add(base);
   // hory na horizonte
   const mg = new THREE.ConeGeometry(1, 1, 7, 1);
   const mm = new THREE.MeshStandardMaterial({ color: 0x6f7f78, flatShading: true, roughness: 1 });
@@ -236,17 +288,31 @@ const winTex = TIERS.map((d, i) => windowTexture(d, i));
 function wallMat(tier, hex) {
   const k = tier + hex;
   if (wallMats[k]) return wallMats[k];
-  return wallMats[k] = new THREE.MeshStandardMaterial({ map: winTex[tier], color: hex, roughness: tier >= 3 ? .35 : .85, metalness: tier >= 3 ? .25 : 0 });
+  return wallMats[k] = new THREE.MeshStandardMaterial({ map: winTex[tier], vertexColors: true, color: hex, roughness: tier >= 3 ? .35 : .85, metalness: tier >= 3 ? .25 : 0 });
 }
-const bodyGeo = TIERS.map(d => new THREE.BoxGeometry(d.w, d.h, d.d).translate(0, d.h / 2, 0));
+const bodyGeo = TIERS.map(d => {   // zapečené "ambient occlusion" pri zemi a mierne zosvetlenie smerom hore (zadarmo za behu)
+  const g = new THREE.BoxGeometry(d.w, d.h, d.d, 1, Math.ceil(d.h / 1.2), 1).translate(0, d.h / 2, 0);
+  const pos = g.attributes.position, col = new Float32Array(pos.count * 3), reach = Math.min(2.6, d.h * .7);
+  for (let i = 0; i < pos.count; i++) { const y = pos.getY(i), v = (.5 + .5 * smooth(0, reach, y)) * (.9 + .1 * y / d.h); col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = v; }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+});
 const pyr = (d, hh) => { const g = new THREE.ConeGeometry(1, hh, 4, 1).rotateY(Math.PI / 4); g.scale(d.w / 2 / .7071 * 1.12, 1, d.d / 2 / .7071 * 1.12); g.translate(0, d.h + hh / 2, 0); return g; };
-const roofGeo = [pyr(TIERS[0], 1.2), pyr(TIERS[1], 1.6)];
-const slabGeo = TIERS.map(d => new THREE.BoxGeometry(d.w * 1.04, .22, d.d * 1.04).translate(0, d.h + .11, 0));
-const setbackGeo = new THREE.BoxGeometry(TIERS[3].w * .62, 2.2, TIERS[3].d * .62).translate(0, TIERS[3].h + 1.1 + .2, 0);
+const chimney = d => new THREE.BoxGeometry(.28, .7, .28).translate(d.w * .22, d.h + .95, d.d * .12);
+const roofGeo = [mergeGeometries([pyr(TIERS[0], 1.2), chimney(TIERS[0])]), mergeGeometries([pyr(TIERS[1], 1.6), chimney(TIERS[1])])];
+const slabGeo = TIERS.map(d => {   // plochá strecha + klimatizačné jednotky
+  const parts = [new THREE.BoxGeometry(d.w * 1.04, .22, d.d * 1.04).translate(0, d.h + .11, 0)];
+  if (d.roof !== 'pitch' && d.roof !== 'spire') {
+    parts.push(new THREE.BoxGeometry(d.w * .22, .35, d.d * .22).translate(-d.w * .25, d.h + .4, d.d * .22));
+    parts.push(new THREE.BoxGeometry(d.w * .16, .28, d.d * .3).translate(d.w * .26, d.h + .36, -d.d * .2));
+  }
+  return mergeGeometries(parts);
+});
+const setbackGeo = paintGeo(new THREE.BoxGeometry(TIERS[3].w * .62, 2.2, TIERS[3].d * .62).translate(0, TIERS[3].h + 1.1 + .2, 0), '#ffffff');
 const spireGeo = [null, null, null, null,
   new THREE.ConeGeometry(.22, 4.5, 6).translate(0, TIERS[4].h + 2.25, 0),
   new THREE.ConeGeometry(.28, 7, 6).translate(0, TIERS[5].h + 3.5, 0)];
-const crownGeo = [4, 5].map(t => new THREE.BoxGeometry(TIERS[t].w * .66, 1.6, TIERS[t].d * .66).translate(0, TIERS[t].h + .9, 0));
+const crownGeo = [4, 5].map(t => paintGeo(new THREE.BoxGeometry(TIERS[t].w * .66, 1.6, TIERS[t].d * .66).translate(0, TIERS[t].h + .9, 0), '#ffffff'));
 const rubbleGeo = new THREE.BoxGeometry(1, .25, 1).translate(0, .125, 0);
 const rubbleMat = new THREE.MeshStandardMaterial({ color: 0x3f3a36, roughness: 1 });
 
@@ -326,7 +392,7 @@ function initTrees() {
   treeMesh.castShadow = true; treeMesh.receiveShadow = true; treeMesh.frustumCulled = false;
   treeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   scene.add(treeMesh);
-  const add = (x, z) => trees.push({ x, z, s: rand(.8, 1.5), rot: rand(0, 6), hp: 5, max: 5, alive: true, grow: 1, shake: 0, timer: 0, idx: trees.length, dirty: true, acc: 0 });
+  const add = (x, z) => inLake(x, z, 1.5) || trees.push({ x, z, sy: rand(.85, 1.3), s: rand(.8, 1.5), rot: rand(0, 6), hp: 5, max: 5, alive: true, grow: 1, shake: 0, timer: 0, idx: trees.length, dirty: true, acc: 0 });
   let n = 0;
   while (n < 330) {
     const x = rand(-WORLD - 4, WORLD + 4), z = rand(-WORLD - 4, WORLD + 4);
@@ -336,7 +402,11 @@ function initTrees() {
     n++;
   }
   lots.filter(l => l.park).forEach(l => { for (let k = 0; k < 3; k++) add(l.x + rand(-2.2, 2.2), l.z + rand(-2.2, 2.2)); });
-  trees.forEach(t => { t.x = clamp(t.x, -WORLD - 6, WORLD + 6); t.z = clamp(t.z, -WORLD - 6, WORLD + 6); });
+  trees.forEach(t => {
+    t.x = clamp(t.x, -WORLD - 6, WORLD + 6); t.z = clamp(t.z, -WORLD - 6, WORLD + 6);
+    const f = rand(.75, 1.25), autumn = Math.random() < .12;
+    treeMesh.setColorAt(t.idx, _c.setRGB(autumn ? 7 * f : f, autumn ? 2.4 * f : f * rand(.9, 1.15), autumn ? .5 : f * rand(.85, 1)));
+  });
 }
 const dummy = new THREE.Object3D();
 function writeTree(t, time) {
@@ -345,7 +415,7 @@ function writeTree(t, time) {
   dummy.position.set(t.x + Math.sin(time * 40 + t.idx) * .05 * t.shake, 0, t.z);
   dummy.rotation.set(Math.sin(t.idx) * lean, t.rot, Math.cos(t.idx) * lean);
   const s = t.s * k;
-  dummy.scale.set(s, s * (t.alive ? 1 : 0), s); dummy.updateMatrix();
+  dummy.scale.set(s, s * t.sy * (t.alive ? 1 : 0), s); dummy.updateMatrix();
   treeMesh.setMatrixAt(t.idx, dummy.matrix);
 }
 
@@ -546,6 +616,63 @@ const marker = new THREE.Mesh(new THREE.RingGeometry(.85, 1, 40).rotateX(-Math.P
 marker.position.y = .2; marker.visible = false; marker.renderOrder = 5; scene.add(marker);
 
 /* ================================================================
+   Autá na cestách (1 instancovaný mesh) + mäkký tieň pod tornádom
+   ================================================================ */
+const CAR_COLORS = ['#d9d9d9', '#c0392b', '#2c5fa8', '#e0b030', '#3a3a40', '#f0f0f0', '#3d8b5a', '#8e4ea0'];
+const cars = [];
+let carMesh;
+const carEdge = HALF + 6;
+function initCars() {
+  const geo = mergeGeometries([
+    paintGeo(new THREE.BoxGeometry(1.7, .2, .76).translate(0, .22, 0), '#15151a'),
+    paintGeo(new THREE.BoxGeometry(1.7, .42, .8).translate(0, .5, 0), '#ffffff'),
+    paintGeo(new THREE.BoxGeometry(.9, .36, .7).translate(-.1, .9, 0), '#202a36'),
+  ]);
+  const n = LOW ? 24 : 40;
+  carMesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .45, metalness: .35 }), n);
+  carMesh.castShadow = true; carMesh.frustumCulled = false; carMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(carMesh);
+  for (let i = 0; i < n; i++) {                       // jedno auto na jazdný pruh – navzájom sa nepredbiehajú
+    const axis = i % 2, dir = (i >> 1) % 2 ? 1 : -1, line = (Math.floor(i / 4) * 3 + (i % 4)) % (NB + 1);
+    cars.push({ i, axis, dir, line: -HALF + line * BLOCK, lane: dir * .9, pos: rand(-carEdge, carEdge), speed: 4 + (i % 5) * .9, alive: true, timer: 0 });
+    carMesh.setColorAt(i, _c.set(pick(CAR_COLORS)));
+  }
+}
+function updateCars(dt) {
+  for (const c of cars) {
+    let x, z;
+    if (!c.alive) {
+      c.timer -= dt;
+      if (c.timer <= 0) { c.alive = true; c.pos = c.dir > 0 ? -carEdge : carEdge; carMesh.setColorAt(c.i, _c.set(pick(CAR_COLORS))); carMesh.instanceColor.needsUpdate = true; }
+      else { dummy.scale.set(0, 0, 0); dummy.updateMatrix(); carMesh.setMatrixAt(c.i, dummy.matrix); continue; }
+    }
+    c.pos += c.dir * c.speed * dt;
+    if (c.pos > carEdge) c.pos = -carEdge; else if (c.pos < -carEdge) c.pos = carEdge;
+    if (c.axis === 0) { x = c.pos; z = c.line + c.lane; } else { x = c.line + c.lane; z = c.pos; }
+    const dx = T.x - x, dz = T.z - z;
+    if (dx * dx + dz * dz < Math.pow(R * 1.05 + 1.3, 2)) {   // auto zasiahnuté tornádom
+      c.alive = false; c.timer = rand(10, 18);
+      const col = carMesh.instanceColor ? '#' + _c.fromArray(carMesh.instanceColor.array, c.i * 3).getHexString() : '#cccccc';
+      for (let k = 0; k < 6; k++) spawnDebris(x + rand(-.6, .6), rand(.3, 1), z + rand(-.4, .4), rand(-3, 3), rand(2, 6), rand(-3, 3), .3, k < 4 ? col : '#202a36');
+      for (let k = 0; k < 4; k++) puff(x, .4, z, rand(-2, 2), rand(.5, 2), rand(-2, 2), 1, 3, rand(1, 1.8), .4, .6);
+      const e = 3 * valueMult(); earn(e); crashSound(0);
+      continue;
+    }
+    dummy.position.set(x, 0, z);
+    dummy.rotation.set(0, c.axis === 0 ? (c.dir > 0 ? 0 : Math.PI) : (c.dir > 0 ? -Math.PI / 2 : Math.PI / 2), 0);
+    dummy.scale.set(1, 1, 1); dummy.updateMatrix();
+    carMesh.setMatrixAt(c.i, dummy.matrix);
+  }
+  carMesh.instanceMatrix.needsUpdate = true;
+}
+const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+  map: (() => { const n = 64, d = new Uint8Array(n * n * 4); for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const r = Math.min(1, Math.hypot(x - 31.5, y - 31.5) / 32), a = 1 - r, k = (y * n + x) * 4; d[k + 3] = a * a * (3 - 2 * a) * 255; }
+    const t = new THREE.DataTexture(d, n, n, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t; })(),
+  color: 0x0a1208, transparent: true, opacity: .5, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -2,
+}));
+blob.position.y = .08; blob.renderOrder = 1; scene.add(blob);
+
+/* ================================================================
    Zvuk
    ================================================================ */
 const AU = { ctx: null };
@@ -686,7 +813,7 @@ function strike(target) {
    ================================================================ */
 const SUN_PERIOD = 240;           // s na jeden okruh slnka
 let sunPhase = .15;
-const C_TOP = new THREE.Color('#4d78a8'), C_HOR = new THREE.Color('#aab9c6');
+const C_TOP = new THREE.Color(SKY_COL.top), C_HOR = new THREE.Color(SKY_COL.hor);
 const C_WHITE = new THREE.Color('#fff0d8'), C_WARM = new THREE.Color('#ffb070');
 const C_FLASH_TOP = new THREE.Color('#c9d8ff'), C_FLASH_HOR = new THREE.Color('#e6eeff');
 const sunDir = new THREE.Vector3(), tint = new THREE.Color(1, 1, 1);
@@ -702,11 +829,11 @@ function updateWeather(dt) {
   const warm = smooth(.95, .6, el) * .6;
   sun.color.copy(C_WHITE).lerp(C_WARM, warm);
   skyUniforms.uSunDir.value.copy(sunDir); skyUniforms.uSunCol.value.copy(sun.color);
-  sky.position.copy(camera.position);
+  sky.position.copy(camera.position); skyUniforms.uTime.value = time;
   if (flash === lastFlash) return;           // zvyšok sa mení iba pri blesku
   lastFlash = flash;
   sun.intensity = 2.5 + flash * 1.2;
-  hemi.intensity = 1.05 + flash * 1.5;
+  hemi.intensity = HEMI_I + flash * 1.5;
   skyUniforms.uTop.value.copy(C_TOP).lerp(C_FLASH_TOP, flash * .5);
   skyUniforms.uHor.value.copy(C_HOR).lerp(C_FLASH_HOR, flash * .5);
   scene.fog.color.copy(skyUniforms.uHor.value);
@@ -715,7 +842,6 @@ function updateWeather(dt) {
   for (const L of funnelLayers) L.mesh.material.color.copy(L.base).multiply(tint);
   for (const c of clouds) c.sp.material.color.setRGB(.27, .3, .35).multiply(tint);
 }
-skyUniforms.uGlow.value = .4;
 rainMat.opacity = .3;
 
 /* ================================================================
@@ -768,6 +894,7 @@ function update(dt) {
   R = lerp(R, radiusOf(), 1 - Math.exp(-dt * 3)); H = 10 + R * 3.4;
   steer(dt);
   updateFunnelTable();
+  blob.position.set(T.x, .08, T.z); blob.scale.setScalar(R * 3.4 + 5);
   const dps = dpsOf(S.lv.power);
 
   // škody na budovách
@@ -838,6 +965,7 @@ function update(dt) {
   flash = Math.max(0, flash - dt * 3.2);
   flashEl.style.opacity = String(flash * .35);
 
+  updateCars(dt);
   updateDebris(dt);
   updatePuffs(dt);
   updateSwirl(dt);
@@ -924,8 +1052,8 @@ function updateSwirl(dt) {
     if (t < .16) r += R * 1.05 * Math.pow(1 - t / .16, 2) * sw.rf[i];
     const y = t * H + Math.sin(sw.ang[i] * 2 + i) * .5, k = i * 3;
     swirl.pos[k] = FX + Math.cos(sw.ang[i]) * r; swirl.pos[k + 1] = y; swirl.pos[k + 2] = FZ + Math.sin(sw.ang[i]) * r;
-    swirl.size[i] = (.55 + R * .1 + t * R * .15) * sw.sz[i] * (1 + (t < .16 ? 1.2 : 0));
-    swirl.alpha[i] = (t < .05 ? t / .05 : 1) * (1 - Math.pow(t, 3)) * .5;
+    swirl.size[i] = (.8 + R * .14 + t * R * .2) * sw.sz[i] * (1 + (t < .16 ? 1.2 : 0));
+    swirl.alpha[i] = (t < .05 ? t / .05 : 1) * (1 - Math.pow(t, 3)) * .3;
     const sh = sw.shade[i] * .8; swirl.col[k] = sh; swirl.col[k + 1] = sh * .94; swirl.col[k + 2] = sh * .86;
   }
   swirl.flush();
@@ -1185,7 +1313,7 @@ window.addEventListener('beforeunload', save);
 /* ================================================================
    Štart
    ================================================================ */
-initCity(); initTrees();
+initCity(); initTrees(); initCars();
 setMuted(S.muted);
 [...$('qty').children].forEach(b => b.classList.toggle('on', b.dataset.q === S.qty));
 window.addEventListener('resize', resize); resize();
@@ -1208,7 +1336,7 @@ if (firstRun) {
 } else if (!offlineClaim(away, false)) { /* nič */ }
 
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;
