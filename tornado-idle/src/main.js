@@ -21,6 +21,17 @@ function fmt(n) {
   return (v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : v.toFixed(0)) + SUF[i];
 }
 
+// Canvas -> DataTexture: dáta zostanú v pamäti JS (mobilné prehliadače po uspatí zahadzujú obsah skrytých canvasov)
+function bakeTexture(c, repeatX) {
+  const w = c.width, h = c.height, src = c.getContext('2d').getImageData(0, 0, w, h).data, row = w * 4, out = new Uint8Array(src.length);
+  for (let y = 0; y < h; y++) out.set(src.subarray(y * row, (y + 1) * row), (h - 1 - y) * row);   // canvas má riadok 0 hore, textúra dole
+  const t = new THREE.DataTexture(out, w, h, THREE.RGBAFormat);
+  t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+  if (repeatX) t.wrapS = THREE.RepeatWrapping;
+  t.needsUpdate = true;
+  return t;
+}
+
 /* ================================================================
    Herný stav, vylepšenia, tiery budov
    ================================================================ */
@@ -29,7 +40,7 @@ const S = { money: 0, total: 0, pts: 0, fronts: 0, destroyed: 0, rate: 0, muted:
   lv: { power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 } };
 try {
   const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-  if (raw && raw.v === 1) { Object.assign(S, raw.s); S.lv = Object.assign({ power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 }, raw.s.lv); }
+  if (raw && (raw.v === 1 || raw.v === 2)) { Object.assign(S, raw.s); if (raw.v === 1) { S.pts = Math.min(S.pts || 0, 25); S.rate = 0; } S.lv = Object.assign({ power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 }, raw.s.lv); }
 } catch (e) { /* ignore */ }
 
 const dpsOf = l => 8 * Math.pow(1.22, l);
@@ -181,8 +192,7 @@ function makeGround() {
     g.beginPath(); g.moveTo(p, 0); g.lineTo(p, SZ); g.stroke();
     g.beginPath(); g.moveTo(0, p); g.lineTo(SZ, p); g.stroke();
   }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const tex = bakeTexture(c); tex.anisotropy = 8;
   const m = new THREE.Mesh(new THREE.PlaneGeometry(W, W).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
   m.receiveShadow = true; m.matrixAutoUpdate = false;
   scene.add(m);
@@ -216,8 +226,7 @@ function windowTexture(def, tier) {
     g.fillStyle = glass ? '#27425e' : '#3a4a63'; g.fillRect(x, y, w, h);
     g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(x, y, w, 2);
   }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  const t = bakeTexture(c); t.anisotropy = 4;
   return t;
 }
 const roofMats = {};
@@ -444,8 +453,7 @@ function streakTex() {
   const gr = g.createLinearGradient(0, 0, 0, 256);
   gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(.14, 'rgba(0,0,0,.85)'); gr.addColorStop(.85, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,.25)');
   g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
-  const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
-  return t;
+  return bakeTexture(c, true);
 }
 const baseStreak = streakTex();
 const ROWS = FT - 1, SEGS = 36;
@@ -504,7 +512,7 @@ function cloudTex() {
   const m = g.createRadialGradient(128, 128, 0, 128, 128, 128);
   m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(.6, 'rgba(0,0,0,.8)'); m.addColorStop(1, 'rgba(0,0,0,0)');
   g.fillStyle = m; g.fillRect(0, 0, 256, 256);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  return bakeTexture(c);
 }
 const cTex = cloudTex();
 const clouds = [];
@@ -1095,7 +1103,7 @@ function updateHUD(dt) {
   setText($('wind'), String(k)); setText($('ef'), ef[0]); $('ef').style.background = ef[1];
   setText($('diam'), (2 * R).toFixed(1));
   setText($('zone'), unlockedTier() + 1 + (megaScale() > 1 ? '+' : ''));
-  setText($('clock'), `Front č. ${S.fronts + 1}${S.pts ? ' · ×' + prestigeMult().toFixed(1) : ''}`);
+  setText($('clock'), `Front č. ${S.fronts + 1}${S.pts ? ' · ×' + fmt(prestigeMult()) : ''}`);
 }
 /* radar */
 const rc = $('radar'), rg = rc.getContext('2d');
@@ -1154,14 +1162,14 @@ tkEl.addEventListener('animationend', () => { tkBusy = false; nextNews(); });
 /* ================================================================
    Ukladanie, offline, úvod
    ================================================================ */
-function save() { if (window.__noSave) return; try { S.time = Date.now(); localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 1, s: S })); } catch (e) { /* ignore */ } }
+function save() { if (window.__noSave) return; try { S.time = Date.now(); localStorage.setItem(SAVE_KEY, JSON.stringify({ v: 2, s: S })); } catch (e) { /* ignore */ } }
 function modal(html) { $('mbox').innerHTML = html; $('modal').classList.add('show'); }
 function closeModal() { $('modal').classList.remove('show'); }
 function offlineClaim(sec, fromHidden) {
   if (sec < 30 || S.rate < .5) return false;
   const eff = offlineEff(S.lv.offline), gain = S.rate * Math.min(sec, 8 * 3600) * eff;
   if (gain < 1) return false;
-  earn(gain); shownMoney = S.money - gain;
+  S.money += gain; S.total += gain; shownMoney = S.money - gain;   // nezapočítavať do €/s (inak sa offline zisk násobí)
   const mins = Math.floor(sec / 60);
   const t = mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`;
   modal(`<div class="lbl">Správa z miesta udalosti</div><h1>Vitaj <em>späť</em></h1><p>Počas tvojej neprítomnosti (${t}) tornádo ďalej ničilo – pri účinnosti ${Math.round(eff * 100)} %.</p><div class="big">+${fmt(gain)} €</div><p>Vylepši „Nočnú zmenu“ pre vyšší offline zisk.</p><button id="m-ok">POKRAČOVAŤ</button>`);
