@@ -432,13 +432,13 @@ const D = {};
 let dn = 0, colorDirty = false;
 { const z = new THREE.Matrix4().makeScale(0, 0, 0), c = new THREE.Color(1, 1, 1); for (let i = 0; i < MAXD; i++) { debMesh.setMatrixAt(i, z); debMesh.setColorAt(i, c); } }
 const _c = new THREE.Color();
-function spawnDebris(x, y, z, vx, vy, vz, size, hex) {
+function spawnDebris(x, y, z, vx, vy, vz, size, hex, life) {
   const i = dn; dn = (dn + 1) % MAXD;
   D.px[i] = x; D.py[i] = y; D.pz[i] = z; D.vx[i] = vx; D.vy[i] = vy; D.vz[i] = vz;
   D.rx[i] = rand(0, 6); D.ry[i] = rand(0, 6); D.rz[i] = rand(0, 6);
   D.wx[i] = rand(-6, 6); D.wy[i] = rand(-6, 6); D.wz[i] = rand(-6, 6);
   D.sx[i] = size * rand(.6, 1.5); D.sy[i] = size * rand(.4, 1.2); D.sz[i] = size * rand(.6, 1.5);
-  D.life[i] = rand(9, 15); D.resp[i] = rand(.5, 1.4) / (.6 + size); D.ejY[i] = rand(.5, 1.0); D.ej[i] = 0;
+  D.life[i] = life || rand(9, 15); D.resp[i] = rand(.5, 1.4) / (.6 + size); D.ejY[i] = rand(.5, 1.0); D.ej[i] = 0;
   _c.set(hex); _c.offsetHSL(0, 0, rand(-.06, .06));
   debMesh.setColorAt(i, _c); colorDirty = true;
 }
@@ -472,8 +472,13 @@ class Particles {
 // vír (stály prstenec prachu okolo lievika)
 const SW = LOW ? 1300 : 2200;
 const swirl = new Particles(SW, 6);
-const sw = { ang: new Float32Array(SW), t: new Float32Array(SW), rf: new Float32Array(SW), spd: new Float32Array(SW), sz: new Float32Array(SW), shade: new Float32Array(SW) };
-for (let i = 0; i < SW; i++) { sw.ang[i] = rand(0, 6.3); sw.t[i] = Math.pow(Math.random(), 1.4); sw.rf[i] = rand(.55, 1.25); sw.spd[i] = rand(.6, 1.4); sw.sz[i] = rand(.6, 1.4); sw.shade[i] = rand(.35, .75); }
+const sw = { ang: new Float32Array(SW), t: new Float32Array(SW), rf: new Float32Array(SW), spd: new Float32Array(SW), sz: new Float32Array(SW), shade: new Float32Array(SW), cls: new Uint8Array(SW) };
+for (let i = 0; i < SW; i++) {   // 0 = mrak prachu, 1 = tmavé úlomky (silueta), 2 = prachová sukňa pri zemi
+  const c = sw.cls[i] = i % 100 < 56 ? 0 : i % 100 < 86 ? 1 : 2;
+  sw.ang[i] = rand(0, 6.3); sw.spd[i] = rand(.6, 1.4); sw.sz[i] = rand(.6, 1.4); sw.shade[i] = rand(0, 1);
+  sw.t[i] = c === 0 ? Math.pow(Math.random(), 1.3) : c === 1 ? Math.pow(Math.random(), 1.7) * .8 : Math.random() * .12;
+  sw.rf[i] = c === 0 ? rand(.55, 1.25) : c === 1 ? rand(.7, 1.7) : rand(.9, 1.4);
+}
 // kúdoly
 const PF = 700;
 const puffs = new Particles(PF, 7);
@@ -491,14 +496,37 @@ function puff(x, y, z, vx, vy, vz, s0, s1, life, a0, shade, tint) {
    ================================================================ */
 const T = { x: 0, z: 0, vx: 0, vz: 0 };
 let R = radiusOf(), H = 10 + R * 3.4;
-const rb = () => R * .2 + .25, rtop = () => R * 1.9 + 2.5;
-const funnelR = t => rb() + (rtop() - rb()) * Math.pow(t, 1.8);
+// Tvar lievika sa plynule mení: 0 = lano · .33 = „komín" (stovepipe) · .66 = kužeľ · 1 = široký klin (wedge).
+// Závisí od sily vetra, v čase mierne kolíše a občas sa tornádo „vylanuje" (zúži a skrúti) a opäť naberie silu.
+const SHAPES = [   // [m, polomer pri zemi (×R, +c), polomer hore (×R, +c), exponent profilu, výška ×]
+  [0, .10, .2, .28, .7, 1.0, 1.15],
+  [.33, .20, .3, .55, 1.2, .6, 1.0],
+  [.66, .22, .3, 1.9, 2.5, 1.8, 1.0],
+  [1, .70, .6, 2.5, 3.0, .9, .85],
+];
+const SH = { m: .35, rbv: 1, rtv: 3, ex: 1, hf: 1, ropeT: rand(60, 100), ropeLeft: 0 };
+function applyShape() {
+  let i = 0; while (i < SHAPES.length - 2 && SH.m > SHAPES[i + 1][0]) i++;
+  const a = SHAPES[i], b = SHAPES[i + 1], k = clamp((SH.m - a[0]) / (b[0] - a[0]), 0, 1), L = (x, y) => lerp(x, y, k);
+  SH.rbv = L(a[1], b[1]) * R + L(a[2], b[2]); SH.rtv = L(a[3], b[3]) * R + L(a[4], b[4]); SH.ex = L(a[5], b[5]); SH.hf = L(a[6], b[6]);
+}
+function updateShape(dt) {
+  if (SH.ropeLeft > 0) { SH.ropeLeft -= dt; if (SH.ropeLeft <= 0) { SH.ropeT = rand(80, 150); news('Tornádo opäť naberá silu a rozširuje sa.'); } }
+  else { SH.ropeT -= dt; if (SH.ropeT <= 0) { SH.ropeLeft = rand(9, 14); news(pick(['Tornádo sa zužuje do lana a vlní sa – nepodceňujte ho!', 'Pozor: tornádo sa mení na úzke lano, stále je však nebezpečné.'])); } }
+  let target = clamp(.2 + S.lv.power * .035, 0, .95) + .14 * Math.sin(time * .09) + .1 * Math.sin(time * .23 + 1.7);
+  if (SH.ropeLeft > 0) target *= .1;
+  SH.m += (clamp(target, 0, 1) - SH.m) * (1 - Math.exp(-dt * .6));
+  applyShape();
+  H = (10 + R * 3.4) * SH.hf;
+}
+const rb = () => SH.rbv, rtop = () => SH.rtv;
+const funnelR = t => SH.rbv + (SH.rtv - SH.rbv) * Math.pow(t, SH.ex) + SH.rtv * .5 * Math.pow(smooth(.78, 1, t), 2);   // na vrchu sa rozlieva do oblaku
 let FX = 0, FZ = 0;
 let time = 0;
 function funnelAt(t) {
-  const lag = Math.pow(t, 1.3);
-  FX = T.x - T.vx * lag * .9 + Math.sin(time * .8 + t * 3.2) * R * .22 * t;
-  FZ = T.z - T.vz * lag * .9 + Math.cos(time * .7 + t * 2.7) * R * .22 * t;
+  const lag = Math.pow(t, 1.3), A = R * (.18 + .5 * (1 - SH.m) * (1 - SH.m) + (SH.ropeLeft > 0 ? .45 : 0));   // tenšie lievik = väčšie vlnenie
+  FX = T.x - T.vx * lag * .9 + (Math.sin(time * .8 + t * 3.2) + .35 * t * Math.sin(time * 1.7 + t * 7)) * A * t;
+  FZ = T.z - T.vz * lag * .9 + (Math.cos(time * .7 + t * 2.7) + .35 * t * Math.cos(time * 1.5 + t * 6.5)) * A * t;
 }
 const FT = 23;                                   // počet radov tabuľky = ROWS + 1
 const ftx = new Float32Array(FT), ftz = new Float32Array(FT), ftr = new Float32Array(FT);
@@ -529,29 +557,60 @@ const baseStreak = streakTex();
 const ROWS = FT - 1, SEGS = 36;
 const COS = new Float32Array(SEGS + 1), SIN = new Float32Array(SEGS + 1);
 for (let i = 0; i <= SEGS; i++) { COS[i] = Math.cos(i / SEGS * Math.PI * 2); SIN[i] = Math.sin(i / SEGS * Math.PI * 2); }
-const funnelLayers = [
-  { op: .82, spd: .55, sc: 1.0, col: 0x6e665d, rep: 3, shadow: false },
-  { op: .7, spd: 1.1, sc: .8, col: 0x4a4540, rep: 4, shadow: true },
-  { op: .5, spd: 1.8, sc: 1.14, col: 0x8a8277, rep: 5, shadow: false },
-].map((d, li) => {
-  const n = (ROWS + 1) * (SEGS + 1);
-  const pos = new Float32Array(n * 3), uv = new Float32Array(n * 2), idx = [];
-  for (let j = 0; j <= ROWS; j++) for (let i = 0; i <= SEGS; i++) {
-    const k = j * (SEGS + 1) + i; uv[k * 2] = i / SEGS * d.rep; uv[k * 2 + 1] = j / ROWS;
-    if (j < ROWS && i < SEGS) { const a = k, b = k + 1, c = k + SEGS + 1, e = c + 1; idx.push(a, c, b, b, c, e); }
+const tubeTint = new THREE.Color(1, 1, 1), tubeSunV = new THREE.Vector3(0, 1, 0);
+const TUBE_LIGHT = new THREE.Color('#b4b8bf'), TUBE_DARK = new THREE.Color('#33291f');
+function makeTube(rows, segs, rep, op, edge, bias, dirtOnly) {
+  const n = (rows + 1) * (segs + 1), pos = new Float32Array(n * 3), uv = new Float32Array(n * 2), nor = new Float32Array(n * 3), dirt = new Float32Array(n), idx = [];
+  for (let j = 0; j <= rows; j++) for (let i = 0; i <= segs; i++) {
+    const k = j * (segs + 1) + i, t = j / rows, a = i / segs * Math.PI * 2;
+    uv[k * 2] = i / segs * rep; uv[k * 2 + 1] = t;
+    nor[k * 3] = Math.cos(a); nor[k * 3 + 2] = Math.sin(a);
+    dirt[k] = dirtOnly ? 1 : clamp((1 - smooth(0, .85, t)) * 1.0 + bias, 0, 1);   // spodok lievika je špinavý od úlomkov
+    if (j < rows && i < segs) { const c = k + segs + 1; idx.push(k, c, k + 1, k + 1, c, c + 1); }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  geo.setAttribute('aDirt', new THREE.BufferAttribute(dirt, 1));
   geo.setIndex(idx);
-  const tex = baseStreak.clone(); tex.needsUpdate = true; tex.wrapS = THREE.RepeatWrapping;
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: d.op, side: THREE.DoubleSide, depthWrite: false, color: d.col, fog: false });
-  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = 2 + li;
-  mesh.castShadow = d.shadow; mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    uniforms: { uMap: { value: baseStreak }, uOp: { value: op }, uEdge: { value: edge }, uTint: { value: tubeTint }, uSunV: { value: tubeSunV },
+      uOff: { value: 0 }, uLight: { value: TUBE_LIGHT }, uDark: { value: TUBE_DARK }, uDirtAmt: { value: 1 } },
+    vertexShader: `attribute float aDirt; varying float vD; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+      void main(){ vUv=uv; vD=aDirt; vec4 mv=modelViewMatrix*vec4(position,1.0); vN=normalize(normalMatrix*normal); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `uniform sampler2D uMap; uniform float uOp,uEdge,uOff,uDirtAmt; uniform vec3 uTint,uSunV,uLight,uDark; varying float vD; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+      void main(){ vec4 t=texture2D(uMap,vec2(vUv.x+uOff,vUv.y));
+        vec3 n=normalize(vN); float f=abs(dot(n,normalize(vV))); float edge=pow(f,uEdge);          // mäkký, "objemový" okraj
+        float lit=0.62+0.5*(dot(n,uSunV)*0.5+0.5);                                             // tienenie od slnka
+        vec3 base=mix(uLight,uDark,clamp(vD*uDirtAmt,0.0,1.0));
+        vec3 c=base*(0.55+t.r*0.75)*lit*uTint;
+        gl_FragColor=vec4(c,t.a*uOp*edge); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+  });
+  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false;
   scene.add(mesh);
-  return Object.assign(d, { geo, pos, tex, mesh, base: new THREE.Color(d.col) });
+  return { geo, pos, mat, mesh, rows, segs, op };
+}
+const funnelLayers = [
+  { sc: 1.18, op: .6, spd: .5, rep: 3, edge: .6, bias: -.2, shadow: false },
+  { sc: 1.0, op: .85, spd: 1.0, rep: 4, edge: .45, bias: .05, shadow: true },
+  { sc: .8, op: .9, spd: 1.7, rep: 5, edge: .38, bias: .25, shadow: false },
+  { sc: .52, op: .95, spd: 2.5, rep: 6, edge: .3, bias: .55, shadow: false },       // tmavé jadro
+].map((d, li) => {
+  const L = Object.assign(d, makeTube(ROWS, SEGS, d.rep, d.op, d.edge, d.bias, false));
+  L.mesh.renderOrder = 2 + li; L.mesh.castShadow = d.shadow;
+  L.mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+  return L;
+});
+// podvíry (suction vortices) – tenké tmavé lieviky krúžiace okolo hlavného, viditeľné pri širokom tvare
+const SUBR = 10, SUBS = 14;
+const subVortices = [0, 1, 2].map(k => {
+  const L = Object.assign({ k, off: 0 }, makeTube(SUBR, SUBS, 3, .8, .5, 1, true));
+  L.mesh.renderOrder = 5; L.mesh.visible = false; return L;
 });
 function updateFunnel(dt) {
+  const dirtAmt = .55 + .45 * SH.m, opK = .8 + .3 * SH.m;
   for (const L of funnelLayers) {
     const p = L.pos;
     for (let j = 0; j <= ROWS; j++) {
@@ -564,7 +623,20 @@ function updateFunnel(dt) {
       }
     }
     L.geo.attributes.position.needsUpdate = true;
-    L.tex.offset.x -= dt * L.spd * .35;
+    L.mat.uniforms.uOff.value -= dt * L.spd * .35;
+    L.mat.uniforms.uDirtAmt.value = dirtAmt; L.mat.uniforms.uOp.value = L.op * opK;
+  }
+  const vis = smooth(.5, .82, SH.m);
+  for (const V of subVortices) {
+    V.mesh.visible = vis > .02; if (!V.mesh.visible) continue;
+    V.mat.uniforms.uOp.value = .8 * vis; V.mat.uniforms.uOff.value -= dt * 2.2;
+    const p = V.pos;
+    for (let j = 0; j <= SUBR; j++) {
+      const t = j / SUBR * .42, th = time * (2.4 + .5 * V.k) + V.k * 2.094 - t * 3, rho = funnelR(0) * .95 * (1 - t * 1.5) + .15, rr = R * .075 + .2 + t * R * .08;
+      funnelLookup(t); const cx = FX + Math.cos(th) * rho, cz = FZ + Math.sin(th) * rho, y = t * H;
+      for (let i = 0; i <= SUBS; i++) { const a = i / SUBS * Math.PI * 2, k = (j * (SUBS + 1) + i) * 3; p[k] = cx + Math.cos(a) * rr; p[k + 1] = y; p[k + 2] = cz + Math.sin(a) * rr; }
+    }
+    V.geo.attributes.position.needsUpdate = true;
   }
 }
 
@@ -837,9 +909,8 @@ function updateWeather(dt) {
   skyUniforms.uTop.value.copy(C_TOP).lerp(C_FLASH_TOP, flash * .5);
   skyUniforms.uHor.value.copy(C_HOR).lerp(C_FLASH_HOR, flash * .5);
   scene.fog.color.copy(skyUniforms.uHor.value);
-  tint.setScalar(1 + flash * .5);
+  tint.setScalar(1 + flash * .5); tubeTint.copy(tint);
   pUniforms.uTint.value.copy(tint).multiplyScalar(1.15);
-  for (const L of funnelLayers) L.mesh.material.color.copy(L.base).multiply(tint);
   for (const c of clouds) c.sp.material.color.setRGB(.27, .3, .35).multiply(tint);
 }
 rainMat.opacity = .3;
@@ -889,9 +960,11 @@ function commandTo(x, z) {
    ================================================================ */
 let lightningTimer = 3, tierSeen = unlockedTier(), megaSeen = megaScale(), flashEl = $('flash');
 const rateHist = [];
+let groundAcc = 0;
+const DIRT_COLS = ['#5a4632', '#6d5a40', '#3f5a2e', '#7a6a52', '#4a4a48', '#8a7b5f', '#3a2f25'], DIRT_TINT = [1, .82, .6];
 function update(dt) {
   time += dt;
-  R = lerp(R, radiusOf(), 1 - Math.exp(-dt * 3)); H = 10 + R * 3.4;
+  R = lerp(R, radiusOf(), 1 - Math.exp(-dt * 3)); updateShape(dt);
   steer(dt);
   updateFunnelTable();
   blob.position.set(T.x, .08, T.z); blob.scale.setScalar(R * 3.4 + 5);
@@ -973,10 +1046,16 @@ function update(dt) {
   updateClouds(dt);
   updateWeather(dt);
 
-  // prachová stopa
-  if (Math.random() < dt * 30) {
-    const a = rand(0, 6.3), r = rand(R * .4, R * 1.1);
-    puff(T.x + Math.cos(a) * r, .3, T.z + Math.sin(a) * r, Math.cos(a) * rand(1, 3) - T.vx * .2, rand(.5, 2), Math.sin(a) * rand(1, 3) - T.vz * .2, R * .5 + .8, R * 1.4 + 2.5, rand(1.2, 2.4), .3, rand(.5, .7));
+  // prach a špina pri zemi
+  if (Math.random() < dt * 45 * (1 + R * .05)) {
+    const a = rand(0, 6.3), r = rand(R * .4, R * 1.2), tv = 2 + R * .3;
+    puff(T.x + Math.cos(a) * r, .3, T.z + Math.sin(a) * r, -Math.sin(a) * tv - T.vx * .2, rand(.5, 2), Math.cos(a) * tv - T.vz * .2, R * .5 + .8, R * 1.5 + 2.8, rand(1.2, 2.6), .38, rand(.35, .6), DIRT_TINT);
+  }
+  groundAcc += dt * Math.min(LOW ? 26 : 55, 14 + R * 3);   // úlomky, hlina a lístie zdvihnuté zo zeme
+  while (groundAcc >= 1) {
+    groundAcc -= 1;
+    const a = rand(0, 6.3), r = R * rand(.25, 1.15), tv = 4 + R * .5;
+    spawnDebris(T.x + Math.cos(a) * r, rand(.05, .4), T.z + Math.sin(a) * r, -Math.sin(a) * tv * .6, rand(.5, 3), Math.cos(a) * tv * .6, rand(.07, .2) * (1 + R * .03), pick(DIRT_COLS), rand(2.5, 5));
   }
   // marker
   if (marker.visible) { const s = 1.2 + .4 * Math.sin(time * 5); marker.scale.setScalar(s * (1 + R * .15)); }
@@ -1042,19 +1121,36 @@ function updatePuffs(dt) {
   puffs.flush();
 }
 function updateSwirl(dt) {
-  const rr = rtop();
   for (let i = 0; i < SW; i++) {
-    let t = sw.t[i]; t += dt * .07 * sw.spd[i]; if (t > 1) { t = Math.random() * .06; sw.ang[i] = rand(0, 6.3); }
+    const c = sw.cls[i];
+    let t = sw.t[i] + dt * (c === 0 ? .07 : c === 1 ? .05 : .025) * sw.spd[i];
+    if (t > (c === 0 ? 1 : c === 1 ? .85 : .12)) { t = Math.random() * (c === 2 ? .04 : .06); sw.ang[i] = rand(0, 6.3); }
     sw.t[i] = t;
-    const f = (1 + (1 - t) * 1.8) * sw.spd[i] * (1.4 + 1.5 / (1 + R * .25));
+    const f = (1 + (1 - t) * 1.8) * sw.spd[i] * (1.4 + 1.5 / (1 + R * .25)) * (c === 1 ? 1.35 : 1);
     sw.ang[i] += dt * f * (1.5 + (1 - t) * 2.5);
-    let r = funnelLookup(t) * sw.rf[i];
-    if (t < .16) r += R * 1.05 * Math.pow(1 - t / .16, 2) * sw.rf[i];
-    const y = t * H + Math.sin(sw.ang[i] * 2 + i) * .5, k = i * 3;
-    swirl.pos[k] = FX + Math.cos(sw.ang[i]) * r; swirl.pos[k + 1] = y; swirl.pos[k + 2] = FZ + Math.sin(sw.ang[i]) * r;
-    swirl.size[i] = (.8 + R * .14 + t * R * .2) * sw.sz[i] * (1 + (t < .16 ? 1.2 : 0));
-    swirl.alpha[i] = (t < .05 ? t / .05 : 1) * (1 - Math.pow(t, 3)) * .3;
-    const sh = sw.shade[i] * .8; swirl.col[k] = sh; swirl.col[k + 1] = sh * .94; swirl.col[k + 2] = sh * .86;
+    const a = sw.ang[i], k = i * 3, sh = sw.shade[i];
+    let r, y, size, alpha, cr, cg, cb;
+    if (c === 2) {                                   // prachová sukňa: široký tmavohnedý prstenec pri zemi
+      r = R * sw.rf[i] * (.9 + t * 3.5); y = t * H * .5 + .2;
+      size = (1.4 + R * .4) * sw.sz[i]; alpha = .4 * (1 - t / .12);
+      cr = .5 + sh * .2; cg = .4 + sh * .16; cb = .28 + sh * .12;
+    } else {
+      r = funnelLookup(t) * sw.rf[i];
+      if (t < .16) r += R * 1.05 * Math.pow(1 - t / .16, 2) * sw.rf[i];
+      y = t * H + Math.sin(a * 2 + i) * .5;
+      if (c === 1) {                                 // úlomky: malé, tmavé, ostré siluety
+        size = (.12 + R * .014) * sw.sz[i]; alpha = .9 * (1 - t * t);
+        cr = .06 + sh * .12; cg = .05 + sh * .09; cb = .04 + sh * .07;
+      } else {                                       // mrak prachu: dole tmavý a hnedý, hore svetlejší
+        const lt = smooth(0, .55, t);
+        size = (.8 + R * .14 + t * R * .2) * sw.sz[i] * (1 + (t < .16 ? 1.2 : 0));
+        alpha = (t < .05 ? t / .05 : 1) * (1 - Math.pow(t, 3)) * .32;
+        const v = .75 + .5 * sh; cr = lerp(.3, .66, lt) * v; cg = lerp(.24, .66, lt) * v; cb = lerp(.17, .68, lt) * v;
+      }
+    }
+    funnelLookup(c === 2 ? 0 : t);
+    swirl.pos[k] = FX + Math.cos(a) * r; swirl.pos[k + 1] = y; swirl.pos[k + 2] = FZ + Math.sin(a) * r;
+    swirl.size[i] = size; swirl.alpha[i] = alpha; swirl.col[k] = cr; swirl.col[k + 1] = cg; swirl.col[k + 2] = cb;
   }
   swirl.flush();
 }
@@ -1087,6 +1183,8 @@ function updateCamera(dt) {
   const sh = cam.shake * cam.shake * .5;
   camera.position.set(cam.tx + Math.sin(cam.yaw) * cp * cam.dist + rand(-sh, sh), Math.max(2, Math.sin(cam.pitch) * cam.dist + ty) + rand(-sh, sh), cam.tz + Math.cos(cam.yaw) * cp * cam.dist + rand(-sh, sh));
   camera.lookAt(cam.tx, ty, cam.tz);
+  camera.updateMatrixWorld(); camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+  tubeSunV.copy(sunDir).transformDirection(camera.matrixWorldInverse);
   // tiene
   const ext = clamp(cam.dist * .8 + 14, 34, 150);
   if (Math.abs(ext - shadowExt) / ext > .06) {
@@ -1336,7 +1434,7 @@ if (firstRun) {
 } else if (!offlineClaim(away, false)) { /* nič */ }
 
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;
