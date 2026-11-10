@@ -1,0 +1,18 @@
+# Tornádo Idle · METEO 24
+
+3D idle hra v HTML. Si tornádo – ničíš mesto, za škody dostávaš peniaze a vylepšuješ vietor.
+Téma UI: televízne počasie (LIVE vysielanie, radar, stupnica EF, ticker so správami).
+
+## Hranie
+Otvor `index.html` v prehliadači (funguje aj z `file://`, všetko je v jednom súbore).
+
+- **Klik** do sveta alebo na radar – nasmeruje tornádo; inak si autopilot vyberá najvýnosnejšie ciele
+- **Ťahanie** – otáčanie kamery, **koliesko / pinch** – zoom
+- **1–6** – nákup vylepšení, **M** – zvuk, ×1 / ×10 / MAX – množstvo nákupu
+- Postup sa ukladá (localStorage) a hra zarába aj offline (vylepšenie „Nočná zmena")
+
+## Vývoj
+```
+npm install
+npm run build   # src/main.js + src/template.html (+ three.js) -> index.html
+```
