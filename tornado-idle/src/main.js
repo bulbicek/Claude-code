@@ -958,32 +958,42 @@ function updateCars(dt) {
 }
 const f3 = v => v.toFixed(3);
 const riverMat = new THREE.ShaderMaterial({
-  transparent: true, depthWrite: false, fog: false,
+  transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
   uniforms: { uTime: { value: 0 }, uTint: { value: tubeTint }, uTop: skyUniforms.uTop, uHor: skyUniforms.uHor, uSunDir: skyUniforms.uSunDir, uSunCol: skyUniforms.uSunCol,
-    uDeep: { value: new THREE.Color('#0d3a5c') }, uShallow: { value: new THREE.Color('#4f9fb0') }, uFogC: { value: scene.fog.color }, uFogN: { value: 60 }, uFogF: { value: 400 } },
+    uDeep: { value: new THREE.Color('#082c47') }, uShallow: { value: new THREE.Color('#3a8a9c') }, uFogC: { value: scene.fog.color }, uFogN: { value: 60 }, uFogF: { value: 400 } },
   vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv=uv; vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }',
   fragmentShader: `uniform float uTime,uFogN,uFogF; uniform vec3 uTint,uTop,uHor,uSunDir,uSunCol,uDeep,uShallow,uFogC; varying vec2 vUv; varying vec3 vW;
     float bedH(float d){ return ${f3(BED)}*(1.0-smoothstep(${f3(BANK1)},${f3(BANK0)},d)); }
+    float h21(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+    float vn(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h21(i),h21(i+vec2(1.,0.)),f.x),mix(h21(i+vec2(0.,1.)),h21(i+vec2(1.,1.)),f.x),f.y); }
+    vec3 skyAt(vec3 r){                                                           // odraz oblohy vrátane mrakov
+      vec3 c=mix(uHor,uTop,pow(clamp(r.y,0.0,1.0),.55));
+      vec2 q=r.xz/(r.y+.2)*1.5+vec2(uTime*.012,uTime*.006);
+      float n=vn(q)*.6+vn(q*2.3)*.4;
+      float m=smoothstep(.38,.72,n)*smoothstep(.02,.3,r.y);
+      return mix(c,mix(uHor*.95,uTop*.55,smoothstep(.45,.85,n)),m*.8);
+    }
     void main(){
       float d=abs(vUv.x-.5)*2.0*${f3(RIVER_HALF + 2.4)};
       float fade=(1.0-smoothstep(86.0,100.0,abs(vW.x)))*(1.0-smoothstep(86.0,100.0,abs(vW.z)));
       float depth=${f3(WATER_Y)}-bedH(d)*fade;                                   // hĺbka vody nad dnom
       if(depth<=0.0) discard;
       vec2 p=vW.xz; float t=uTime;
-      vec2 g=vec2(cos(p.x*.9+p.y*.6+t*1.3)*.5+cos(p.x*2.1-p.y*1.7+t*2.1)*.25+cos(p.x*4.3+p.y*3.1-t*3.0)*.12,
-                  cos(p.x*.7-p.y*.9+t*1.1)*.5+cos(p.y*2.3+p.x*1.5-t*1.9)*.25+cos(p.y*4.1-p.x*2.7+t*2.7)*.12);
-      vec3 n=normalize(vec3(-g.x*.16,1.0,-g.y*.16));                           // vlnky
+      vec2 flow=vec2(0.0,t*.9);
+      vec2 g=vec2(cos(p.x*.9+p.y*.6+t*1.3)*.5+cos(p.x*2.1-p.y*1.7+t*2.1)*.3+cos(p.x*4.3+p.y*3.1-t*3.0)*.2+cos(p.x*8.7-p.y*6.1+t*4.3)*.12,
+                  cos(p.x*.7-p.y*.9+t*1.1)*.5+cos(p.y*2.3+p.x*1.5-t*1.9)*.3+cos(p.y*4.1-p.x*2.7+t*2.7)*.2+cos(p.y*7.9+p.x*5.3-t*3.9)*.12);
+      vec3 n=normalize(vec3(-g.x*.2,1.0,-g.y*.2));                             // vlnky
       vec3 v=normalize(cameraPosition-vW);
-      float F=clamp(.04+.96*pow(1.0-max(dot(n,v),0.0),4.0),0.0,1.0);         // Fresnel
-      vec3 r=reflect(-v,n); r.y=abs(r.y);
-      vec3 sky=mix(uHor,uTop,pow(clamp(r.y,0.0,1.0),.55));
-      float sd=max(dot(r,normalize(uSunDir)),0.0);
-      vec3 spec=uSunCol*(pow(sd,220.0)*7.0+pow(sd,30.0)*.4);                  // odlesk slnka
-      vec3 col=mix(uDeep,uShallow,exp(-depth*1.5));
-      col=mix(col,sky,clamp(F*.9+.14,0.0,1.0))+spec;
-      float foam=smoothstep(.2,.0,depth+sin(p.x*5.0+t*2.0)*.04+sin(p.y*4.0-t*1.7)*.04);
-      col=mix(col,vec3(.93,.96,.98),foam*.85);
-      float a=clamp(depth*2.8,0.0,1.0)*.93+F*.07;
+      float F=clamp(.07+.93*pow(1.0-max(dot(n,v),0.0),3.0),0.0,1.0);         // Fresnel: pri plytkom uhle zrkadlí
+      vec3 r=reflect(-v,n); r.y=abs(r.y)+.02;
+      vec3 sky=skyAt(normalize(r));
+      float sd=max(dot(normalize(r),normalize(uSunDir)),0.0);
+      vec3 spec=uSunCol*(pow(sd,120.0)*5.0+pow(sd,14.0)*.35);                 // odlesky slnka
+      vec3 col=mix(uDeep,uShallow,exp(-depth*1.6));
+      col=mix(col,sky,clamp(F*.95+.16,0.0,1.0))+spec;
+      float foam=1.0-smoothstep(.0,.2,depth+sin(p.x*5.0+t*2.0)*.04+sin(p.y*4.0-t*1.7)*.04);
+      col=mix(col,vec3(.93,.96,.98),foam*.8);
+      float a=clamp(depth*2.8,0.0,1.0)*.95+F*.05;
       col*=uTint;
       float ff=smoothstep(uFogN,uFogF,length(cameraPosition-vW));
       gl_FragColor=vec4(mix(col,uFogC,ff),a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
