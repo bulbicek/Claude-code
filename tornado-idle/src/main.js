@@ -804,7 +804,7 @@ function makeTube(rows, segs, rep, op, edge, bias, dirtOnly) {
 }
 const funnelLayers = [
   { sc: 1.18, op: .6, spd: .5, rep: 3, edge: .6, bias: -.2, shadow: false },
-  { sc: 1.0, op: .85, spd: 1.0, rep: 4, edge: .45, bias: .05, shadow: true },
+  { sc: 1.0, op: .85, spd: 1.0, rep: 4, edge: .45, bias: .05, shadow: false },
   { sc: .8, op: .9, spd: 1.7, rep: 5, edge: .38, bias: .25, shadow: false },
   { sc: .52, op: .95, spd: 2.5, rep: 6, edge: .3, bias: .55, shadow: false },       // tmavé jadro
 ].map((d, li) => {
@@ -1055,6 +1055,8 @@ const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
   color: 0x0a1208, transparent: true, opacity: .5, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -2,
 }));
 blob.position.y = .08; blob.renderOrder = 1; scene.add(blob);
+blob.material.opacity = .36;
+const castBlob = new THREE.Mesh(blob.geometry, blob.material.clone()); castBlob.material.opacity = .24; castBlob.renderOrder = 1; scene.add(castBlob);   // vrhnutý tieň lievika
 
 /* ================================================================
    Zvuk
@@ -1338,6 +1340,11 @@ function update(dt) {
   steer(dt);
   updateFunnelTable();
   blob.position.set(T.x, .08, T.z); blob.scale.setScalar(R * 3.4 + 5);
+  {
+    const hz = Math.hypot(sunDir.x, sunDir.z) || 1, len = Math.min(H * .7 * hz / Math.max(.25, sunDir.y), 40 + R * 4), wid = R * 3 + SH.rtv * .8 + 3, ux = -sunDir.x / hz, uz = -sunDir.z / hz;
+    castBlob.position.set(T.x + ux * len * .45, .07, T.z + uz * len * .45);
+    castBlob.rotation.y = -Math.atan2(uz, ux); castBlob.scale.set(len + wid, 1, wid);
+  }
   if (boost.cd > 0) boost.cd -= dt;
   if (boost.t > 0) boost.t -= dt;
   const boosted = boost.t > 0, dps = dpsOf(S.lv.power) * (boosted ? 3 : 1);
@@ -1353,16 +1360,16 @@ function update(dt) {
     if (inRange) {
       hurt(b, dps * (.35 + .65 * (1 - d / edge)) * dt);
       if (!b.alive) continue;
-      b.lx = dx / (d || 1); b.lz = dz / (d || 1);
+      const lk = Math.min(1, dt * 1.2); b.lx += (dx / (d || 1) - b.lx) * lk; b.lz += (dz / (d || 1) - b.lz) * lk;   // smer náklonu sa mení plynulo, nie skokom
       b.group.matrixAutoUpdate = true; b.settled = false;
     } else if (b.settled) continue;            // budova v pokoji – nič nepočítame
     b.shake = Math.max(0, b.shake - dt * 2);
     const hp = b.hp / b.max, bs = b.group.userData.base, g = b.group;
-    const ys = lerp(.55, 1, smooth(0, 1, hp)), lean = (1 - hp) * .28;
+    const tall = clamp(b.h / 20, 0, 1), ys = lerp(.55 + .3 * tall, 1, smooth(0, 1, hp)), lean = (1 - hp) * Math.min(.28, .8 / b.h);   // vrchol sa vychýli najviac o ~0,8 m bez ohľadu na výšku
     g.scale.set(bs.x, bs.y * ys, bs.z);
     g.rotation.x = lean * b.lz; g.rotation.z = -lean * b.lx;
-    g.position.x = b.x + Math.sin(time * 55 + b.x) * .06 * b.shake * (1 + b.tier * .3);
-    g.position.z = b.z + Math.cos(time * 47 + b.z) * .06 * b.shake * (1 + b.tier * .3);
+    g.position.x = b.x + Math.sin(time * 26 + b.x) * .03 * b.shake;
+    g.position.z = b.z + Math.cos(time * 22 + b.z) * .03 * b.shake;
     if (!inRange && b.shake <= 0) { g.position.set(b.x, 0, b.z); g.updateMatrix(); g.matrixAutoUpdate = false; b.settled = true; }
   }
   // stromy
