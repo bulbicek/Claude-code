@@ -112,7 +112,7 @@ const camera = new THREE.PerspectiveCamera(48, 1, 1, 2500);
 const cam = { yaw: 0.65, pitch: 0.6, zoom: 1, dist: 40, tx: 0, tz: 0, shake: 0 };
 
 const HALF = 64, WORLD = 92;
-const LAKES = [{ x: 76, z: -68, rx: 15, rz: 9 }, { x: -80, z: 62, rx: 12, rz: 8 }, { x: 70, z: 78, rx: 9, rz: 6 }];
+const LAKES = [];   // ploché jazerá boli odstránené (vodu tvorí len 3D rieka)
 const inLake = (x, z, pad) => LAKES.some(l => Math.pow((x - l.x) / (l.rx + pad), 2) + Math.pow((z - l.z) / (l.rz + pad), 2) < 1);
 function paintGeo(g, col) { const c = new THREE.Color(col), n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; }
 let particleScale = 1000;
@@ -307,7 +307,7 @@ function buildPlan() {
   for (let tries = 0; tries < 160 && PARKS.length < 3; tries++) {
     const x = pr_(-50, 50), z = pr_(-50, 50);
     if (clearance(x, z, -1) < 14 || distRiver(x, z) < 17 || PARKS.some(p => Math.hypot(p.x - x, p.z - z) < 36)) continue;
-    PARKS.push({ x, z, r: 9, pond: prng() < .6 });
+    PARKS.push({ x, z, r: 9 }); prng();   // prng() ponechané, aby sa nezmenil pôdorys mesta
   }
   // parcely pozdĺž ulíc – budovy otočené k ulici
   const placed = [];
@@ -368,7 +368,6 @@ function makeGround() {
     g.fillStyle = '#8cba68'; g.beginPath(); g.arc(cx, cz, pk.r * .8 * ppu, 0, 7); g.fill();
     g.strokeStyle = '#cdbf95'; g.lineWidth = 1.1 * ppu; g.beginPath(); g.arc(cx, cz, pk.r * .55 * ppu, 0, 7); g.stroke();
     g.beginPath(); g.moveTo(cx - pk.r * ppu, cz); g.lineTo(cx + pk.r * ppu, cz); g.moveTo(cx, cz - pk.r * ppu); g.lineTo(cx, cz + pk.r * ppu); g.stroke();
-    if (pk.pond) { g.fillStyle = '#3f86b8'; g.beginPath(); g.ellipse(cx, cz, 3 * ppu, 2.2 * ppu, .4, 0, 7); g.fill(); g.fillStyle = '#5aa6d2'; g.beginPath(); g.ellipse(cx, cz, 1.8 * ppu, 1.2 * ppu, .4, 0, 7); g.fill(); }
   }
   // dvory pred domami
   for (const l of LOT_SPECS) {
@@ -607,7 +606,7 @@ function initTrees() {
     if (trees.length > before) n++;
   }
   for (let k = 0; k < 400 && trees.length < 560; k++) add(rand(-HALF, HALF), rand(-HALF, HALF), { lots: true, pad: 2.2 });   // stromy v meste
-  for (const pk of PARKS) for (let k = 0; k < 16; k++) { const a = rand(0, 6.3), r = pk.r * Math.sqrt(Math.random()) * .9; if (pk.pond && Math.hypot(r * Math.cos(a), r * Math.sin(a)) < 4) continue; add(pk.x + Math.cos(a) * r, pk.z + Math.sin(a) * r, { force: true }); }
+  for (const pk of PARKS) for (let k = 0; k < 16; k++) { const a = rand(0, 6.3), r = pk.r * Math.sqrt(Math.random()) * .9; add(pk.x + Math.cos(a) * r, pk.z + Math.sin(a) * r, { force: true }); }
   for (const pl of PLAZAS) for (let k = 0; k < 3; k++) { const a = k * 2.1 + .5; add(pl.x + Math.cos(a) * pl.r * .22, pl.z + Math.sin(a) * pl.r * .22, { force: true }); }
   for (const st of ROADS) if (st.median) for (let i = 3; i < st.pts.length - 3; i += 4) { const q = st.pts[i]; if (!PLAZAS.some(pl => Math.hypot(pl.x - q.x, pl.z - q.z) < pl.r + 1.5)) add(q.x, q.z, { force: true }); }
   lots.filter(l => l.park).forEach(l => { for (let k = 0; k < 3; k++) add(l.x + rand(-2.2, 2.2), l.z + rand(-2.2, 2.2), { force: true }); });
@@ -686,7 +685,7 @@ for (let i = 0; i < SW; i++) {   // 0 = mrak prachu, 1 = tmavé úlomky (silueta
   const c = sw.cls[i] = i % 100 < 56 ? 0 : i % 100 < 86 ? 1 : 2;
   sw.ang[i] = rand(0, 6.3); sw.spd[i] = rand(.6, 1.4); sw.sz[i] = rand(.6, 1.4); sw.shade[i] = rand(0, 1);
   sw.t[i] = c === 0 ? Math.pow(Math.random(), 1.3) : c === 1 ? Math.pow(Math.random(), 1.7) * .8 : Math.random() * .12;
-  sw.rf[i] = c === 0 ? rand(.55, 1.25) : c === 1 ? rand(.7, 1.7) : rand(.9, 1.4);
+  sw.rf[i] = c === 0 ? rand(.78, 1.08) : c === 1 ? rand(.7, 1.7) : rand(.9, 1.4);
 }
 // kúdoly
 const PF = 700;
@@ -1531,9 +1530,9 @@ function updateSwirl(dt) {
         cr = .06 + sh * .12; cg = .05 + sh * .09; cb = .04 + sh * .07;
       } else {                                       // mrak prachu: dole tmavý a hnedý, hore svetlejší
         const lt = smooth(0, .55, t);
-        size = (.8 + R * .14 + t * R * .2) * sw.sz[i] * (1 + (t < .16 ? 1.2 : 0));
-        alpha = (t < .05 ? t / .05 : 1) * (1 - Math.pow(t, 3)) * .32;
-        const v = .75 + .5 * sh; cr = lerp(.3, .66, lt) * v; cg = lerp(.24, .66, lt) * v; cb = lerp(.17, .68, lt) * v;
+        size = (1.7 + R * .34 + t * R * .42) * (.8 + .4 * sw.sz[i]) * (1 + (t < .16 ? .6 : 0));
+        alpha = (t < .05 ? t / .05 : 1) * (1 - Math.pow(t, 3)) * .17;
+        const v = .92 + .16 * sh; cr = lerp(.27, .47, lt) * v; cg = lerp(.22, .47, lt) * v; cb = lerp(.16, .49, lt) * v;
       }
     }
     funnelLookup(c === 2 ? 0 : t);
