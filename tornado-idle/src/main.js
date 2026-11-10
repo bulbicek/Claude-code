@@ -25,7 +25,7 @@ function fmt(n) {
    Herný stav, vylepšenia, tiery budov
    ================================================================ */
 const SAVE_KEY = 'tornadoIdle.v1';
-const S = { money: 0, total: 0, destroyed: 0, rate: 0, muted: false, qty: '1', time: Date.now(),
+const S = { money: 0, total: 0, pts: 0, fronts: 0, destroyed: 0, rate: 0, muted: false, qty: '1', time: Date.now(),
   lv: { power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 } };
 try {
   const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
@@ -47,7 +47,9 @@ const offlineEff = l => Math.min(1, 0.1 + 0.06 * l);
 const costOf = (u, l) => Math.floor(u.base * Math.pow(u.g, l));
 const radiusOf = () => 2.6 * Math.pow(1.055, S.lv.radius);
 const speedOf = () => Math.min(30, 4.2 * Math.pow(1.05, S.lv.speed));
-const valueMult = () => Math.pow(1.2, S.lv.value);
+const prestigeMult = () => 1 + 0.2 * S.pts;
+const prestigeGain = () => Math.floor(Math.cbrt(S.total / 2e5));
+const valueMult = () => Math.pow(1.2, S.lv.value) * prestigeMult();
 const windKmh = () => 85 + 16 * S.lv.power;
 function efOf(k) {
   if (k >= 450) return ['EF5+', '#ff4d6d'];
@@ -85,7 +87,8 @@ const megaScale = () => S.total > 5e6 ? Math.pow(2, Math.floor(Math.log10(S.tota
    ================================================================ */
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-const BASE_PR = Math.min(window.devicePixelRatio || 1, 2);
+const LOW = matchMedia('(pointer:coarse)').matches || (navigator.hardwareConcurrency || 8) <= 4;
+const BASE_PR = Math.min(window.devicePixelRatio || 1, LOW ? 1.5 : 2);
 let pr = BASE_PR;
 renderer.setPixelRatio(pr);
 renderer.shadowMap.enabled = true;
@@ -106,7 +109,7 @@ function resize() {
   camera.aspect = w / h; camera.updateProjectionMatrix();
   particleScale = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
   pUniforms.uScale.value = particleScale;
-  $('tk').parentElement && document.documentElement.style.setProperty('--cw', $('tk').parentElement.clientWidth + 'px');
+  document.documentElement.style.setProperty('--cw', $('tk').parentElement.clientWidth + 'px');
 }
 
 /* ---- obloha ---- */
@@ -128,7 +131,7 @@ const hemi = new THREE.HemisphereLight(0xbcd2ee, 0x5a6b4a, 1.0);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff0d8, 2.4);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(LOW ? 1024 : 2048, LOW ? 1024 : 2048);
 sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.05;
 scene.add(sun, sun.target);
 let shadowExt = 0;
@@ -181,7 +184,7 @@ function makeGround() {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
   const m = new THREE.Mesh(new THREE.PlaneGeometry(W, W).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
-  m.receiveShadow = true;
+  m.receiveShadow = true; m.matrixAutoUpdate = false;
   scene.add(m);
   const base = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x6d9a50, roughness: 1 }));
   base.position.y = -0.05; base.receiveShadow = true; scene.add(base);
@@ -193,7 +196,7 @@ function makeGround() {
     const mt = new THREE.Mesh(mg, mm);
     mt.scale.set(h * rand(1.0, 1.7), h, h * rand(1.0, 1.7));
     mt.position.set(Math.cos(a) * r, h / 2 - 2, Math.sin(a) * r);
-    mt.rotation.y = rand(0, 6);
+    mt.rotation.y = rand(0, 6); mt.updateMatrix(); mt.matrixAutoUpdate = false;
     scene.add(mt);
   }
 }
@@ -202,37 +205,29 @@ makeGround();
 /* ================================================================
    Budovy
    ================================================================ */
-function windowTextures(def, tier) {
-  const cw = 22, ch = 22;
-  const W = def.cols * cw, H = def.rows * ch;
-  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
-  const a = mk(), b = mk(), ga = a.getContext('2d'), gb = b.getContext('2d');
-  const glass = tier >= 3;
-  ga.fillStyle = glass ? '#cfd8e2' : '#ffffff'; ga.fillRect(0, 0, W, H);
-  gb.fillStyle = '#000'; gb.fillRect(0, 0, W, H);
-  for (let r = 0; r < def.rows; r++) for (let c = 0; c < def.cols; c++) {
-    const x = c * cw + (glass ? 2 : 5), y = r * ch + (glass ? 3 : 5), w = cw - (glass ? 4 : 10), h = ch - (glass ? 7 : 10);
-    if (tier <= 1 && r === 0 && c === 0) { ga.fillStyle = '#6b4a35'; ga.fillRect(x, y - 2, w, h + 4); continue; } // dvere
-    ga.fillStyle = glass ? '#27425e' : '#3a4a63'; ga.fillRect(x, y, w, h);
-    ga.fillStyle = 'rgba(255,255,255,.18)'; ga.fillRect(x, y, w, 2);
-    if (Math.random() < .4) { gb.fillStyle = pick(['#ffd78a', '#ffe9b0', '#ffc66b']); gb.fillRect(x, y, w, h); }
+function windowTexture(def, tier) {
+  const cw = 22, ch = 22, W = def.cols * cw, H = def.rows * ch;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), glass = tier >= 3;
+  g.fillStyle = glass ? '#cfd8e2' : '#ffffff'; g.fillRect(0, 0, W, H);
+  for (let r = 0; r < def.rows; r++) for (let k = 0; k < def.cols; k++) {
+    const x = k * cw + (glass ? 2 : 5), y = r * ch + (glass ? 3 : 5), w = cw - (glass ? 4 : 10), h = ch - (glass ? 7 : 10);
+    if (tier <= 1 && r === 0 && k === 0) { g.fillStyle = '#6b4a35'; g.fillRect(x, y - 2, w, h + 4); continue; } // dvere
+    g.fillStyle = glass ? '#27425e' : '#3a4a63'; g.fillRect(x, y, w, h);
+    g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(x, y, w, 2);
   }
-  const t1 = new THREE.CanvasTexture(a), t2 = new THREE.CanvasTexture(b);
-  t1.colorSpace = t2.colorSpace = THREE.SRGBColorSpace;
-  t1.anisotropy = 4;
-  return [t1, t2];
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
 }
 const roofMats = {};
 const roofMat = hex => roofMats[hex] || (roofMats[hex] = new THREE.MeshStandardMaterial({ color: hex, roughness: .9 }));
 const wallMats = {};
-const wallMatList = [];
-const winTex = TIERS.map((d, i) => windowTextures(d, i));
+const winTex = TIERS.map((d, i) => windowTexture(d, i));
 function wallMat(tier, hex) {
   const k = tier + hex;
   if (wallMats[k]) return wallMats[k];
-  const m = new THREE.MeshStandardMaterial({ map: winTex[tier][0], color: hex, emissiveMap: winTex[tier][1], emissive: 0xffc870, emissiveIntensity: 0, roughness: tier >= 3 ? .35 : .85, metalness: tier >= 3 ? .25 : 0 });
-  wallMatList.push(m);
-  return wallMats[k] = m;
+  return wallMats[k] = new THREE.MeshStandardMaterial({ map: winTex[tier], color: hex, roughness: tier >= 3 ? .35 : .85, metalness: tier >= 3 ? .25 : 0 });
 }
 const bodyGeo = TIERS.map(d => new THREE.BoxGeometry(d.w, d.h, d.d).translate(0, d.h / 2, 0));
 const pyr = (d, hh) => { const g = new THREE.ConeGeometry(1, hh, 4, 1).rotateY(Math.PI / 4); g.scale(d.w / 2 / .7071 * 1.12, 1, d.d / 2 / .7071 * 1.12); g.translate(0, d.h + hh / 2, 0); return g; };
@@ -283,6 +278,7 @@ function makeBuilding(lot, instant) {
   g.position.set(lot.x, 0, lot.z);
   g.rotation.y = Math.random() < .5 ? 0 : Math.PI / 2;
   g.scale.setScalar(instant ? 1 : 0.001);
+  g.children.forEach(c => { c.updateMatrix(); c.matrixAutoUpdate = false; });
   cityGroup.add(g);
   if (lot.rubble) { cityGroup.remove(lot.rubble); lot.rubble = null; }
   const hp = def.hp * mega * rand(.9, 1.1);
@@ -290,7 +286,7 @@ function makeBuilding(lot, instant) {
     lot, tier, def, x: lot.x, z: lot.z, group: g, hp, max: hp, value: def.val * mega * rand(.9, 1.1), alive: true,
     grow: instant ? 1 : 0, shake: 0, acc: 0, emitted: 0, chunks: 8 + tier * 9, r: Math.max(def.w, def.d) / 2 * Math.max(sx, 1),
     h: def.h * sy + (tier >= 4 ? 5 : 0), wallHex, roofHex: def.roof === 'pitch' ? roofHex : '#5a5f66', lx: 0, lz: 0, earned: 0,
-    glass: tier >= 3, sy,
+    glass: tier >= 3, sy, settled: false,
   };
   g.scale.set(b.grow * sx, b.grow * sy, b.grow * sx);
   lot.b = b; buildings.push(b);
@@ -395,7 +391,7 @@ class Particles {
   flush() { for (const k of ['position', 'aSize', 'aAlpha', 'aColor']) this.geo.attributes[k].needsUpdate = true; }
 }
 // vír (stály prstenec prachu okolo lievika)
-const SW = 2200;
+const SW = LOW ? 1300 : 2200;
 const swirl = new Particles(SW, 6);
 const sw = { ang: new Float32Array(SW), t: new Float32Array(SW), rf: new Float32Array(SW), spd: new Float32Array(SW), sz: new Float32Array(SW), shade: new Float32Array(SW) };
 for (let i = 0; i < SW; i++) { sw.ang[i] = rand(0, 6.3); sw.t[i] = Math.pow(Math.random(), 1.4); sw.rf[i] = rand(.55, 1.25); sw.spd[i] = rand(.6, 1.4); sw.sz[i] = rand(.6, 1.4); sw.shade[i] = rand(.35, .75); }
@@ -425,6 +421,16 @@ function funnelAt(t) {
   FX = T.x - T.vx * lag * .9 + Math.sin(time * .8 + t * 3.2) * R * .22 * t;
   FZ = T.z - T.vz * lag * .9 + Math.cos(time * .7 + t * 2.7) * R * .22 * t;
 }
+const FT = 23;                                   // počet radov tabuľky = ROWS + 1
+const ftx = new Float32Array(FT), ftz = new Float32Array(FT), ftr = new Float32Array(FT);
+function updateFunnelTable() {
+  for (let j = 0; j < FT; j++) { const t = j / (FT - 1); funnelAt(t); ftx[j] = FX; ftz[j] = FZ; ftr[j] = funnelR(t); }
+}
+function funnelLookup(t) {                       // nastaví FX, FZ a vráti polomer lievika vo výške t (0..1)
+  const f = clamp(t, 0, 1) * (FT - 1), j = Math.min(FT - 2, f | 0), k = f - j;
+  FX = ftx[j] + (ftx[j + 1] - ftx[j]) * k; FZ = ftz[j] + (ftz[j + 1] - ftz[j]) * k;
+  return ftr[j] + (ftr[j + 1] - ftr[j]) * k;
+}
 function streakTex() {
   const c = document.createElement('canvas'); c.width = c.height = 256;
   const g = c.getContext('2d');
@@ -442,7 +448,9 @@ function streakTex() {
   return t;
 }
 const baseStreak = streakTex();
-const ROWS = 22, SEGS = 36;
+const ROWS = FT - 1, SEGS = 36;
+const COS = new Float32Array(SEGS + 1), SIN = new Float32Array(SEGS + 1);
+for (let i = 0; i <= SEGS; i++) { COS[i] = Math.cos(i / SEGS * Math.PI * 2); SIN[i] = Math.sin(i / SEGS * Math.PI * 2); }
 const funnelLayers = [
   { op: .82, spd: .55, sc: 1.0, col: 0x6e665d, rep: 3, shadow: false },
   { op: .7, spd: 1.1, sc: .8, col: 0x4a4540, rep: 4, shadow: true },
@@ -469,13 +477,12 @@ function updateFunnel(dt) {
   for (const L of funnelLayers) {
     const p = L.pos;
     for (let j = 0; j <= ROWS; j++) {
-      const t = j / ROWS; funnelAt(t);
-      const r = funnelR(t) * L.sc, y = t * H;
+      const t = j / ROWS, r = ftr[j] * L.sc, y = t * H, cx = ftx[j], cz = ftz[j], ph = time * 2.1 + t * 7 + L.spd, ph2 = time * 3.3;
       for (let i = 0; i <= SEGS; i++) {
         const a = i / SEGS * Math.PI * 2;
-        const rr = r * (1 + .07 * Math.sin(a * 3 + time * 2.1 + t * 7 + L.spd) + .04 * Math.sin(a * 5 - time * 3.3));
+        const rr = r * (1 + .07 * Math.sin(a * 3 + ph) + .04 * Math.sin(a * 5 - ph2));
         const k = (j * (SEGS + 1) + i) * 3;
-        p[k] = FX + Math.cos(a) * rr; p[k + 1] = y; p[k + 2] = FZ + Math.sin(a) * rr;
+        p[k] = cx + COS[i] * rr; p[k + 1] = y; p[k + 2] = cz + SIN[i] * rr;
       }
     }
     L.geo.attributes.position.needsUpdate = true;
@@ -509,7 +516,7 @@ for (let i = 0; i < 26; i++) {
 }
 
 /* ---- dážď ---- */
-const RN = 1500;
+const RN = LOW ? 700 : 1500;
 const rainPos = new Float32Array(RN * 6), rainX = new Float32Array(RN), rainY = new Float32Array(RN), rainZ = new Float32Array(RN);
 const rainGeo = new THREE.BufferGeometry(); rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3).setUsage(THREE.DynamicDrawUsage));
 const rainMat = new THREE.LineBasicMaterial({ color: 0xb4c6d8, transparent: true, opacity: .28, depthWrite: false, fog: false });
@@ -575,7 +582,7 @@ const pops = [];
 function floatText(x, y, z, text, scale) {
   if (pops.length > 14 || (scale < 1 && pops.length > 7)) return;
   const el = document.createElement('div'); el.className = 'pop'; el.textContent = text;
-  el.style.fontSize = (14 + Math.min(14, scale * 3)) + 'px';
+  el.style.fontSize = (10 + Math.min(5, scale * 1.2)) + 'px';
   fxLayer.appendChild(el); pops.push({ el, p: new THREE.Vector3(x, y, z), t: 0 });
 }
 const _v = new THREE.Vector3();
@@ -613,7 +620,7 @@ function destroyBuilding(b) {
     const a = rand(0, 6.3), s = rand(1, 4 + b.tier);
     puff(b.x + rand(-1, 1) * b.r, rand(.2, b.h * .6), b.z + rand(-1, 1) * b.r, Math.cos(a) * s, rand(.5, 3), Math.sin(a) * s, 1.5 + b.tier * .8, 4 + b.tier * 1.6, rand(1.4, 2.8), rand(.35, .6), rand(.45, .7));
   }
-  floatText(b.x, b.h, b.z, '+' + fmt(b.earned) + ' €', b.tier);
+  floatText(b.x, b.h, b.z, '+' + fmt(b.earned), b.tier);
   cam.shake = Math.min(1.2, cam.shake + .08 + b.tier * .1);
   crashSound(b.tier);
   S.destroyed++;
@@ -645,7 +652,7 @@ let flash = 0;
 function strike(target) {
   const grp = new THREE.Group();
   const top = new THREE.Vector3(target.x, target.h || 2, target.z);
-  funnelAt(1);
+  funnelLookup(1);
   const start = new THREE.Vector3(FX + rand(-1, 1) * rtop() * .7, H * 1.08, FZ + rand(-1, 1) * rtop() * .7);
   const pts = [start.clone()];
   const N = 12;
@@ -669,54 +676,39 @@ function strike(target) {
 /* ================================================================
    Počasie, deň / noc
    ================================================================ */
-const DAY_LEN = 300;
-let dayPhase = 0.18; // 0..1
-const cTop = new THREE.Color(), cHor = new THREE.Color();
-const PAL = {
-  dayTop: new THREE.Color('#4d78a8'), dayHor: new THREE.Color('#aab9c6'),
-  duskTop: new THREE.Color('#3b4a74'), duskHor: new THREE.Color('#d98a5a'),
-  nightTop: new THREE.Color('#050b1c'), nightHor: new THREE.Color('#16223c'),
-};
-let dayF = 1, tint = new THREE.Color();
+const SUN_PERIOD = 240;           // s na jeden okruh slnka
+let sunPhase = .15;
+const C_TOP = new THREE.Color('#4d78a8'), C_HOR = new THREE.Color('#aab9c6');
+const C_WHITE = new THREE.Color('#fff0d8'), C_WARM = new THREE.Color('#ffb070');
+const C_FLASH_TOP = new THREE.Color('#c9d8ff'), C_FLASH_HOR = new THREE.Color('#e6eeff');
+const sunDir = new THREE.Vector3(), tint = new THREE.Color(1, 1, 1);
+hemi.color.set('#a9bfd8'); hemi.groundColor.set('#4d5c3e');
+let lastFlash = -1;
 function updateWeather(dt) {
-  dayPhase = (dayPhase + dt / DAY_LEN) % 1;
-  const p = dayPhase * Math.PI * 2, sn = Math.sin(p);
-  dayF = smooth(-.18, .3, sn);
-  const dusk = 1 - Math.abs(dayF * 2 - 1);
-  const el = .22 + .6 * Math.abs(sn);
-  const az = p;
-  const dir = new THREE.Vector3(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az * .5 + .6) * .5).normalize();
+  sunPhase = (sunPhase + dt / SUN_PERIOD) % 1;
+  const p = sunPhase * Math.PI * 2, el = .95 + .35 * Math.sin(p * 2 + 1);   // výška slnka kolíše medzi ~35° a 75°
+  sunDir.set(Math.cos(p) * Math.cos(el), Math.sin(el), Math.sin(p) * Math.cos(el));
   const dist = shadowExt * 2.2 + 60;
-  sun.position.set(T.x + dir.x * dist, dir.y * dist, T.z + dir.z * dist);
+  sun.position.set(T.x + sunDir.x * dist, sunDir.y * dist, T.z + sunDir.z * dist);
   sun.target.position.set(T.x, 0, T.z);
-  const warm = new THREE.Color('#ffefd2').lerp(new THREE.Color('#ff9a5a'), dusk * .7);
-  const moon = new THREE.Color('#8fa8e8');
-  sun.color.copy(moon).lerp(warm, dayF);
-  const fl = flash;
-  sun.intensity = lerp(.55, 2.5, dayF) * (1 - .25 * 0) + fl * 1.2;
-  hemi.intensity = lerp(.55, 1.05, dayF) + fl * 1.5;
-  hemi.color.set('#9fb4d0').lerp(new THREE.Color('#1c2a4d'), 1 - dayF);
-  hemi.groundColor.set('#4d5c3e').lerp(new THREE.Color('#10161f'), 1 - dayF);
-  cTop.copy(PAL.nightTop).lerp(PAL.dayTop, dayF).lerp(PAL.duskTop, dusk * .5);
-  cHor.copy(PAL.nightHor).lerp(PAL.dayHor, dayF).lerp(PAL.duskHor, dusk * .55);
-  const fc = fl * .5; cTop.lerp(new THREE.Color('#c9d8ff'), fc); cHor.lerp(new THREE.Color('#e6eeff'), fc);
-  skyUniforms.uTop.value.copy(cTop); skyUniforms.uHor.value.copy(cHor);
-  skyUniforms.uSunDir.value.copy(dir); skyUniforms.uSunCol.value.copy(warm);
-  skyUniforms.uGlow.value = .35 * dayF + .1;
+  const warm = smooth(.95, .6, el) * .6;
+  sun.color.copy(C_WHITE).lerp(C_WARM, warm);
+  skyUniforms.uSunDir.value.copy(sunDir); skyUniforms.uSunCol.value.copy(sun.color);
   sky.position.copy(camera.position);
-  scene.fog.color.copy(cHor);
-  const lt = .3 + .7 * dayF;
-  tint.setRGB(lt * (.85 + .15 * dayF), lt * (.9 + .1 * dayF), lt + (1 - dayF) * .12).addScalar(fl * .5);
+  if (flash === lastFlash) return;           // zvyšok sa mení iba pri blesku
+  lastFlash = flash;
+  sun.intensity = 2.5 + flash * 1.2;
+  hemi.intensity = 1.05 + flash * 1.5;
+  skyUniforms.uTop.value.copy(C_TOP).lerp(C_FLASH_TOP, flash * .5);
+  skyUniforms.uHor.value.copy(C_HOR).lerp(C_FLASH_HOR, flash * .5);
+  scene.fog.color.copy(skyUniforms.uHor.value);
+  tint.setScalar(1 + flash * .5);
   pUniforms.uTint.value.copy(tint).multiplyScalar(1.15);
   for (const L of funnelLayers) L.mesh.material.color.copy(L.base).multiply(tint);
   for (const c of clouds) c.sp.material.color.setRGB(.27, .3, .35).multiply(tint);
-  rainMat.opacity = .12 + .2 * dayF;
-  const night = 1 - dayF;
-  for (const m of wallMatList) m.emissiveIntensity = night * .8;
-  const hh = (dayPhase * 24 + 6) % 24;
-  $('clock').textContent = String(Math.floor(hh)).padStart(2, '0') + ':' + String(Math.floor((hh % 1) * 60)).padStart(2, '0');
-  $('clockIcon').textContent = dayF > .7 ? '⛈️' : dayF > .3 ? '🌅' : '🌙';
 }
+skyUniforms.uGlow.value = .4;
+rainMat.opacity = .3;
 
 /* ================================================================
    Riadenie tornáda (autopilot / klik)
@@ -745,7 +737,7 @@ function steer(dt) {
     if (pickTimer <= 0 || !target || !target.alive) { pickTarget(); pickTimer = 1.2; }
     if (target) { tx = target.x; tz = target.z; } else { tx = T.x + Math.cos(time) * 10; tz = T.z + Math.sin(time) * 10; }
   }
-  const dx = tx - T.x, dz = tz - T.z, d = Math.hypot(dx, dz) || 1;
+  const dx = tx - T.x, dz = tz - T.z, d = Math.sqrt(dx * dx + dz * dz) || 1;
   const sp = speedOf() * (manual ? 1 : smooth(0, R * 1.6 + 1.5, d) * .85 + .15);
   const px = -dz / d, pz = dx / d, wob = Math.sin(time * .9) * .25 * Math.min(1, d / 10);
   const wantX = (dx / d + px * wob) * sp, wantZ = (dz / d + pz * wob) * sp;
@@ -761,27 +753,28 @@ function commandTo(x, z) {
 /* ================================================================
    Hlavný update
    ================================================================ */
-let lightningTimer = 3, stormLvSeen = 0, tierSeen = unlockedTier(), megaSeen = megaScale(), flashEl = $('flash');
+let lightningTimer = 3, tierSeen = unlockedTier(), megaSeen = megaScale(), flashEl = $('flash');
 const rateHist = [];
 function update(dt) {
   time += dt;
   R = lerp(R, radiusOf(), 1 - Math.exp(-dt * 3)); H = 10 + R * 3.4;
   steer(dt);
+  updateFunnelTable();
   const dps = dpsOf(S.lv.power);
 
   // škody na budovách
   for (let i = buildings.length - 1; i >= 0; i--) {
     const b = buildings[i];
     if (!b.alive) continue;
-    if (b.grow < 1) { b.grow = Math.min(1, b.grow + dt / 1.8); const e = b.grow, s = 1 + 1.70158 * Math.pow(e - 1, 3) + 2.70158 * Math.pow(e - 1, 2); const g = e < 1 ? s : 1; b.group.scale.set(g * b.group.userData.base.x, g * b.group.userData.base.y, g * b.group.userData.base.z); continue; }
-    const dx = T.x - b.x, dz = T.z - b.z, d = Math.hypot(dx, dz), edge = R * 1.05 + b.r;
-    const frac = b.hp / b.max;
-    if (d < edge) {
-      const k = .35 + .65 * (1 - d / edge);
-      hurt(b, dps * k * dt);
+    if (b.grow < 1) { b.grow = Math.min(1, b.grow + dt / 1.8); const e = b.grow - 1, s = 1 + 2.70158 * e * e * e + 1.70158 * e * e; const g = b.grow < 1 ? s : 1; b.group.scale.set(g * b.group.userData.base.x, g * b.group.userData.base.y, g * b.group.userData.base.z); continue; }
+    const dx = T.x - b.x, dz = T.z - b.z, d = Math.sqrt(dx * dx + dz * dz), edge = R * 1.05 + b.r;
+    const inRange = d < edge;
+    if (inRange) {
+      hurt(b, dps * (.35 + .65 * (1 - d / edge)) * dt);
       if (!b.alive) continue;
       b.lx = dx / (d || 1); b.lz = dz / (d || 1);
-    }
+      b.group.matrixAutoUpdate = true; b.settled = false;
+    } else if (b.settled) continue;            // budova v pokoji – nič nepočítame
     b.shake = Math.max(0, b.shake - dt * 2);
     const hp = b.hp / b.max, bs = b.group.userData.base, g = b.group;
     const ys = lerp(.55, 1, smooth(0, 1, hp)), lean = (1 - hp) * .28;
@@ -789,11 +782,12 @@ function update(dt) {
     g.rotation.x = lean * b.lz; g.rotation.z = -lean * b.lx;
     g.position.x = b.x + Math.sin(time * 55 + b.x) * .06 * b.shake * (1 + b.tier * .3);
     g.position.z = b.z + Math.cos(time * 47 + b.z) * .06 * b.shake * (1 + b.tier * .3);
+    if (!inRange && b.shake <= 0) { g.position.set(b.x, 0, b.z); g.updateMatrix(); g.matrixAutoUpdate = false; b.settled = true; }
   }
   // stromy
   for (const t of trees) {
     if (t.alive) {
-      const dx = T.x - t.x, dz = T.z - t.z, d = Math.hypot(dx, dz), edge = R * 1.05 + .6;
+      const dx = T.x - t.x, dz = T.z - t.z, d = Math.sqrt(dx * dx + dz * dz), edge = R * 1.05 + .6;
       if (d < edge) {
         const k = .35 + .65 * (1 - d / edge), dm = dps * k * dt;
         t.hp -= dm; t.shake = 1; t.dirty = true;
@@ -855,7 +849,7 @@ function update(dt) {
   const ut = unlockedTier(), ms = megaScale();
   if (ut > tierSeen) { tierSeen = ut; news(`Pozor: v zóne pribudli objekty typu „${TIERS[ut].name}“. Vyššia škoda, vyššie zisky!`, true); }
   if (ms > megaSeen) { megaSeen = ms; news('Mesto sa rozrastá – nové budovy sú ešte vyššie a odolnejšie!', true); }
-  income *= 1; rateHist.push([time, income]); income = 0;
+  rateHist.push([time, income]); income = 0;
   while (rateHist.length && time - rateHist[0][0] > 4) rateHist.shift();
 }
 
@@ -867,9 +861,9 @@ function updateDebris(dt) {
     if (D.life[i] <= 0) { D.life[i] = 0; dummy.scale.set(0, 0, 0); dummy.updateMatrix(); debMesh.setMatrixAt(i, dummy.matrix); continue; }
     let x = D.px[i], y = D.py[i], z = D.pz[i], vx = D.vx[i], vy = D.vy[i], vz = D.vz[i];
     if (!D.ej[i]) {
-      const t = clamp(y / hs, 0, 1); funnelAt(t);
-      const dx = x - FX, dz = z - FZ, d = Math.hypot(dx, dz) + 1e-3;
-      const rh = funnelR(t) + R * .5, inf = rh * 2.4 + 3;
+      const rF = funnelLookup(y / hs);
+      const dx = x - FX, dz = z - FZ, d = Math.sqrt(dx * dx + dz * dz) + 1e-3;
+      const rh = rF + R * .5, inf = rh * 2.4 + 3;
       if (d < inf) {
         const k = 1 - d / inf, kk = Math.sqrt(k);
         const tx = -dz / d, tz = dx / d;
@@ -904,7 +898,7 @@ function updatePuffs(dt) {
     pf.vx[i] *= d; pf.vz[i] *= d; pf.vy[i] = pf.vy[i] * d + dt * .6;
     puffs.pos[i * 3] += pf.vx[i] * dt; puffs.pos[i * 3 + 1] += pf.vy[i] * dt; puffs.pos[i * 3 + 2] += pf.vz[i] * dt;
     // záchvat vetra – kúdoly sa točia okolo tornáda
-    const dx = puffs.pos[i * 3] - T.x, dz = puffs.pos[i * 3 + 2] - T.z, dd = Math.hypot(dx, dz) + .01;
+    const dx = puffs.pos[i * 3] - T.x, dz = puffs.pos[i * 3 + 2] - T.z, dd = Math.sqrt(dx * dx + dz * dz) + .01;
     if (dd < R * 3 + 3) { const k = (1 - dd / (R * 3 + 3)) * dt * 6; pf.vx[i] += -dz / dd * k * 6; pf.vz[i] += dx / dd * k * 6; pf.vy[i] += k * 2; }
     puffs.size[i] = lerp(pf.s0[i], pf.s1[i], Math.sqrt(p));
     puffs.alpha[i] = pf.a0[i] * Math.pow(1 - p, 1.3) * Math.min(1, p * 8);
@@ -918,8 +912,7 @@ function updateSwirl(dt) {
     sw.t[i] = t;
     const f = (1 + (1 - t) * 1.8) * sw.spd[i] * (1.4 + 1.5 / (1 + R * .25));
     sw.ang[i] += dt * f * (1.5 + (1 - t) * 2.5);
-    funnelAt(t);
-    let r = funnelR(t) * sw.rf[i];
+    let r = funnelLookup(t) * sw.rf[i];
     if (t < .16) r += R * 1.05 * Math.pow(1 - t / .16, 2) * sw.rf[i];
     const y = t * H + Math.sin(sw.ang[i] * 2 + i) * .5, k = i * 3;
     swirl.pos[k] = FX + Math.cos(sw.ang[i]) * r; swirl.pos[k + 1] = y; swirl.pos[k + 2] = FZ + Math.sin(sw.ang[i]) * r;
@@ -930,7 +923,7 @@ function updateSwirl(dt) {
   swirl.flush();
 }
 function updateClouds(dt) {
-  funnelAt(1);
+  FX = ftx[FT - 1]; FZ = ftz[FT - 1];
   const rt = rtop();
   for (const c of clouds) {
     c.ang += dt * c.spd;
@@ -1006,6 +999,28 @@ UPG.forEach((u, i) => {
   el.addEventListener('click', () => { audioInit(); buy(u); });
   upWrap.appendChild(el); upEls[u.id] = { el, lv: el.querySelector('i'), ef: el.querySelector('.ef2'), buy: el.querySelector('.buy') };
 });
+const presEl = (() => {
+  const el = document.createElement('div'); el.className = 'up pres';
+  el.innerHTML = '<div class="ic">🌀</div><div><div class="nm">Nový front<i></i></div><div class="ef2"></div></div><div class="buy"></div>';
+  el.addEventListener('click', () => { audioInit(); askPrestige(); });
+  upWrap.appendChild(el);
+  return { el, ef: el.querySelector('.ef2'), buy: el.querySelector('.buy') };
+})();
+function askPrestige() {
+  const g = prestigeGain();
+  if (g < 1) { news('Nový front: potrebuješ aspoň 200K škody v tomto fronte.', true); return; }
+  modal(`<div class="lbl">Prestíž</div><h1>NOVÝ <em>FRONT</em></h1>
+    <p>Z tornáda sa stane nová tlaková níž. Stratíš peniaze, vylepšenia a mesto sa postaví odznova, ale získaš trvalý bonus.</p>
+    <div class="big">+${g} 🌀</div><p>Bonus ku všetkým škodám: ×${prestigeMult().toFixed(1)} → <b>×${(1 + .2 * (S.pts + g)).toFixed(1)}</b></p>
+    <button id="m-yes">NOVÝ FRONT</button> <button id="m-no" style="background:#2a4a85;color:#fff">ZRUŠIŤ</button>`);
+  $('m-no').onclick = closeModal;
+  $('m-yes').onclick = () => {
+    S.pts += prestigeGain(); S.fronts++;
+    S.money = 0; S.total = 0; S.rate = 0;
+    for (const k in S.lv) S.lv[k] = 0;
+    save(); window.__noSave = true; location.reload();
+  };
+}
 function plan(u) {
   const l = S.lv[u.id], cap = u.max === undefined ? Infinity : u.max - l;
   if (cap <= 0) return { n: 0, cost: 0, max: true };
@@ -1033,29 +1048,37 @@ window.addEventListener('keydown', e => {
 $('btn-mute').addEventListener('click', () => { audioInit(); setMuted(!S.muted); });
 $('btn-reset').addEventListener('click', () => { if (confirm('Naozaj začať odznova? Všetok postup sa stratí.')) { localStorage.removeItem(SAVE_KEY); window.__noSave = true; location.reload(); } });
 
-function refreshUI(force) {
+const setHTML = (el, v) => { if (el._v !== v) { el._v = v; el.innerHTML = v; } };
+const setText = (el, v) => { if (el._v !== v) { el._v = v; el.textContent = v; } };
+function refreshUI() {
   for (const u of UPG) {
     const e = upEls[u.id], l = S.lv[u.id], p = plan(u);
-    e.lv.textContent = 'Úr. ' + l;
-    e.ef.innerHTML = p.max ? `<b>${u.show(l)}</b> (maximum)` : `${u.show(l)} → <b>${u.show(l + p.n)}</b>`;
-    e.buy.textContent = p.max ? 'MAX' : (p.n > 1 ? `+${p.n} · ` : '') + fmt(p.cost) + ' €';
+    setText(e.lv, 'Úr. ' + l);
+    setHTML(e.ef, p.max ? `<b>${u.show(l)}</b> (maximum)` : `${u.show(l)} → <b>${u.show(l + p.n)}</b>`);
+    setText(e.buy, p.max ? 'MAX' : (p.n > 1 ? `+${p.n} · ` : '') + fmt(p.cost) + ' €');
     e.el.classList.toggle('can', !p.max && S.money >= p.cost);
     e.el.classList.toggle('max', p.max);
   }
+  // prestíž
+  const g = prestigeGain(), pe = presEl;
+  setHTML(pe.ef, g >= 1 ? `+${g} 🌀 · bonus ×${(1 + .2 * (S.pts + g)).toFixed(1)} <b>(teraz ×${prestigeMult().toFixed(1)})</b>` : `Potrebuješ ${fmt(2e5)} škody v tomto fronte · bonus teraz ×${prestigeMult().toFixed(1)}`);
+  setText(pe.buy, g >= 1 ? 'ZAČAŤ' : 'ZAMKNUTÉ');
+  pe.el.classList.toggle('can', g >= 1);
 }
 let shownMoney = S.money;
 function updateHUD(dt) {
   shownMoney = lerp(shownMoney, S.money, 1 - Math.exp(-dt * 12));
   if (Math.abs(shownMoney - S.money) < .5) shownMoney = S.money;
-  $('money').innerHTML = fmt(shownMoney) + ' <small>€</small>';
+  setHTML($('money'), fmt(shownMoney) + ' <small>€</small>');
   let r = 0; if (rateHist.length > 1) { for (const h of rateHist) r += h[1]; r /= Math.max(.5, rateHist[rateHist.length - 1][0] - rateHist[0][0] + .0001); }
   S.rate = lerp(S.rate, r, .1);
-  $('rate').textContent = '+' + fmt(S.rate) + ' €/s';
-  $('destroyed').textContent = fmt(S.destroyed) + ' zničených';
+  setText($('rate'), '+' + fmt(S.rate) + ' €/s');
+  setText($('destroyed'), fmt(S.destroyed) + ' zničených');
   const k = windKmh(), ef = efOf(k);
-  $('wind').textContent = k; $('ef').textContent = ef[0]; $('ef').style.background = ef[1];
-  $('diam').textContent = (2 * R).toFixed(1);
-  $('zone').textContent = unlockedTier() + 1 + (megaScale() > 1 ? '+' : '');
+  setText($('wind'), String(k)); setText($('ef'), ef[0]); $('ef').style.background = ef[1];
+  setText($('diam'), (2 * R).toFixed(1));
+  setText($('zone'), unlockedTier() + 1 + (megaScale() > 1 ? '+' : ''));
+  setText($('clock'), `Front č. ${S.fronts + 1}${S.pts ? ' · ×' + prestigeMult().toFixed(1) : ''}`);
 }
 /* radar */
 const rc = $('radar'), rg = rc.getContext('2d');
@@ -1171,7 +1194,7 @@ function frame(now) {
   updateCamera(dt); updateRain(dt); updatePops(dt); updateAudio();
   hudT += dt; if (hudT > .1) { updateHUD(hudT); hudT = 0; }
   uiT += dt; if (uiT > .25) { refreshUI(); uiT = 0; }
-  radT += dt; if (radT > .05) { drawRadar(); radT = 0; }
+  radT += dt; if (radT > .08) { drawRadar(); radT = 0; }
   saveT += dt; if (saveT > 5) { save(); saveT = 0; }
   // adaptívna kvalita
   fpsAcc += rdt; fpsN++; fpsT += rdt;

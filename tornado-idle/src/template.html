@@ -71,6 +71,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a1a33;font-family:va
 .up.can .buy{background:var(--yellow);color:#06122b;box-shadow:0 0 12px rgba(255,210,31,.5);animation:pulse 1.4s infinite}
 @keyframes pulse{50%{box-shadow:0 0 2px rgba(255,210,31,.2)}}
 .up:active{transform:scale(.98)}
+.up.pres{border-style:dashed;background:linear-gradient(90deg,rgba(120,60,200,.35),rgba(13,58,140,.25))}
+.up.pres .ic{background:radial-gradient(circle at 35% 30%,#b57bff,#3a1b7a)}
+.mbox button+button{margin-left:8px}
 .up.max .buy{background:#1c7a4a;color:#fff}
 .pf{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-top:1px solid var(--line);font-size:11px;color:#8fb0e6}
 .pf button{background:none;border:1px solid var(--line);color:#8fb0e6;border-radius:4px;font-size:11px;padding:3px 8px;cursor:pointer}
@@ -118,7 +121,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0a1a33;font-family:va
   <div class="brand"><span class="live"><i></i>LIVE</span><b>METEO</b><em>24</em></div>
   <div class="headline" id="headline">Tornádo · priamy prenos z postihnutej oblasti</div>
   <div id="bar-btns"><button class="ib" id="btn-mute" title="Zvuk (M)">🔊</button></div>
-  <div class="clock"><span id="clockIcon">☀️</span><span id="clock">12:00</span></div>
+  <div class="clock"><span id="clockIcon">⛈️</span><span id="clock">12:00</span></div>
 </header>
 
 <section id="left">
