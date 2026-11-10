@@ -211,6 +211,19 @@ const riverPts = spline([[-115, -26], [-80, -18], [-52, -4], [-30, 10], [-6, 14]
 const riverTan = riverPts.map((p, i) => { const a = riverPts[Math.max(0, i - 1)], b = riverPts[Math.min(riverPts.length - 1, i + 1)], d = Math.hypot(b.x - a.x, b.z - a.z) || 1; return { x: (b.x - a.x) / d, z: (b.z - a.z) / d }; });
 function distRiver(x, z) { let m = 1e9; for (const p of riverPts) { const d = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z); if (d < m) m = d; } return Math.sqrt(m); }
 
+// 3D koryto: breh klesá z úrovne terénu (0) na dno (BED) a voda stojí na WATER_Y
+const BED = -1.7, WATER_Y = -.55, BANK0 = RIVER_HALF + 3.4, BANK1 = RIVER_HALF - .6, GRID = 200;
+const riverCoarse = riverPts.filter((_, i) => i % 3 === 0), HF = new Float32Array((GRID + 1) * (GRID + 1));
+function terrainH(x, z) {
+  let m = 1e9; for (const p of riverCoarse) { const d = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z); if (d < m) m = d; }
+  if (m > (BANK0 + 5) * (BANK0 + 5)) return 0;
+  const fade = (1 - smooth(86, 100, Math.abs(x))) * (1 - smooth(86, 100, Math.abs(z)));   // pri okraji mapy sa koryto vyplytčuje
+  return BED * (1 - smooth(BANK1, BANK0, distRiver(x, z))) * fade;
+}
+function heightAt(x, z) {                          // rýchly dotaz na výšku terénu (bilineárne z mriežky)
+  const u = clamp(x + 100, 0, GRID - .001), v = clamp(z + 100, 0, GRID - .001), i = u | 0, j = v | 0, a = u - i, b = v - j, w = GRID + 1;
+  return (HF[j * w + i] * (1 - a) + HF[j * w + i + 1] * a) * (1 - b) + (HF[(j + 1) * w + i] * (1 - a) + HF[(j + 1) * w + i + 1] * a) * b;
+}
 const ROADS = [], PLAZAS = [], PARKS = [], BRIDGES = [], JUNCTIONS = [], LOT_SPECS = [];
 const RS = { x: [], z: [], h: [], id: [] };       // všetky vzorky ciest pre dotazy na vzdialenosť
 function addStreet(kind, pts, extra) {
@@ -389,17 +402,25 @@ function makeGround() {
   }
   // rieka: breh, voda, jadro (voda sa navyše animuje samostatným pásom)
   g.beginPath(); riverPts.forEach((q, i) => i ? g.lineTo(px(q.x), px(q.z)) : g.moveTo(px(q.x), px(q.z)));
-  for (const [w, col] of [[RIVER_HALF * 2 + 5.4, '#c8b98a'], [RIVER_HALF * 2 + 1, '#a89a6e'], [RIVER_HALF * 2, '#3f86b8'], [RIVER_HALF, '#4a93c4']]) { g.lineWidth = w * ppu; g.strokeStyle = col; g.stroke(); }
+  for (const [w, col] of [[BANK0 * 2 + .6, '#bdae80'], [(RIVER_HALF + 2.2) * 2, '#a39465'], [(RIVER_HALF + .8) * 2, '#85775a'], [(RIVER_HALF - 1.2) * 2, '#665b45']]) { g.lineWidth = w * ppu; g.strokeStyle = col; g.stroke(); }
   for (let i = 0; i < 26000; i++) { // jemná zrnitosť
     g.fillStyle = Math.random() < .5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.06)';
     g.fillRect(rand(0, SZ), rand(0, SZ), randi(1, 3), randi(1, 3));
   }
   const tex = bakeTexture(c); tex.anisotropy = 8;
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(W, W).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, roughness: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+  const gg = new THREE.PlaneGeometry(W, W, GRID, GRID).rotateX(-Math.PI / 2), gp = gg.attributes.position;
+  for (let i = 0; i < gp.count; i++) { const h = terrainH(gp.getX(i), gp.getZ(i)); gp.setY(i, h); HF[i] = h; }
+  gg.computeVertexNormals();
+  const m = new THREE.Mesh(gg, new THREE.MeshStandardMaterial({ map: tex, roughness: 1 }));
   m.receiveShadow = true; m.matrixAutoUpdate = false;
   scene.add(m);
   const base = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x6d9a50, roughness: 1 }));
-  base.position.y = -0.45; base.receiveShadow = true; scene.add(base);
+  base.position.y = -2.6; base.receiveShadow = true; scene.add(base);
+  // „sukňa" okolo mapy: zelené steny od terénu po základnú plochu (okraj mapy nesmie ukázať schod)
+  const skirtGeo = new THREE.BufferGeometry(), sv = [], sc = 100;
+  for (const [ax, az, bx, bz] of [[-sc, -sc, sc, -sc], [sc, -sc, sc, sc], [sc, sc, -sc, sc], [-sc, sc, -sc, -sc]]) sv.push(ax, 0, az, bx, 0, bz, bx, -2.6, bz, ax, 0, az, bx, -2.6, bz, ax, -2.6, az);
+  skirtGeo.setAttribute('position', new THREE.Float32BufferAttribute(sv, 3)); skirtGeo.computeVertexNormals();
+  const skirt = new THREE.Mesh(skirtGeo, new THREE.MeshBasicMaterial({ color: 0x4f7a3a, side: THREE.DoubleSide })); skirt.matrixAutoUpdate = false; scene.add(skirt);
   // hory na horizonte
   const mg = new THREE.ConeGeometry(1, 1, 7, 1);
   const mm = new THREE.MeshStandardMaterial({ color: 0x6f7f78, flatShading: true, roughness: 1 });
@@ -490,7 +511,7 @@ function bridgeGeo(len, wid) {
     add(new THREE.BoxGeometry(len, .08, .16).translate(0, .34 + .3, sg * (wid / 2 - .12)), '#bfc2c7');
     for (let x = -len / 2 + .3; x <= len / 2 - .2; x += 2.2) add(new THREE.BoxGeometry(.22, .7, .24).translate(x, .34 + .35, sg * (wid / 2 - .12)), '#c4c7cc');
   }
-  for (const k of [-.32, 0, .32]) add(new THREE.BoxGeometry(.9, .8, wid * .7).translate(k * len, -.1, 0), '#5c5f66');
+  for (const k of [-.32, 0, .32]) add(new THREE.BoxGeometry(.9, 2.2, wid * .7).translate(k * len, -.85, 0), '#5c5f66');
   return mergeGeometries(parts);
 }
 function makeBridge(lot, instant) {                 // most je „budova": má životy, hodnotu, dorastá a dá sa zničiť
@@ -574,7 +595,7 @@ function initTrees() {
   const houses = lots.filter(l => l.kind !== 'bridge'), nearLot = (x, z, d) => houses.some(l => (l.x - x) * (l.x - x) + (l.z - z) * (l.z - z) < d * d);
   const add = (x, z, o) => {
     o = o || {};
-    if (inLake(x, z, 1.5) || distRiver(x, z) < RIVER_HALF + 2.8) return;
+    if (inLake(x, z, 1.5) || distRiver(x, z) < RIVER_HALF + 4) return;
     if (!o.force && (clearance(x, z, -1) < (o.pad === undefined ? 1.8 : o.pad) || (o.lots && nearLot(x, z, 3.4)))) return;
     trees.push({ x, z, sy: rand(.85, 1.3), s: rand(.8, 1.5), rot: rand(0, 6), hp: 5, max: 5, alive: true, grow: 1, shake: 0, timer: 0, idx: trees.length, dirty: true, acc: 0 });
   };
@@ -935,26 +956,43 @@ function updateCars(dt) {
   }
   carMesh.instanceMatrix.needsUpdate = true;
 }
+const f3 = v => v.toFixed(3);
 const riverMat = new THREE.ShaderMaterial({
-  transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, fog: false,
-  uniforms: { uTime: { value: 0 }, uCol: { value: new THREE.Color('#3f86b8') }, uLit: { value: new THREE.Color('#9fd2ee') }, uTint: { value: tubeTint } },
-  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-  fragmentShader: `uniform float uTime; uniform vec3 uCol,uLit,uTint; varying vec2 vUv;
+  transparent: true, depthWrite: false, fog: false,
+  uniforms: { uTime: { value: 0 }, uTint: { value: tubeTint }, uTop: skyUniforms.uTop, uHor: skyUniforms.uHor, uSunDir: skyUniforms.uSunDir, uSunCol: skyUniforms.uSunCol,
+    uDeep: { value: new THREE.Color('#0d3a5c') }, uShallow: { value: new THREE.Color('#4f9fb0') }, uFogC: { value: scene.fog.color }, uFogN: { value: 60 }, uFogF: { value: 400 } },
+  vertexShader: 'varying vec2 vUv; varying vec3 vW; void main(){ vUv=uv; vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }',
+  fragmentShader: `uniform float uTime,uFogN,uFogF; uniform vec3 uTint,uTop,uHor,uSunDir,uSunCol,uDeep,uShallow,uFogC; varying vec2 vUv; varying vec3 vW;
+    float bedH(float d){ return ${f3(BED)}*(1.0-smoothstep(${f3(BANK1)},${f3(BANK0)},d)); }
     void main(){
-      float w1=sin(vUv.y*2.4-uTime*1.1+sin(vUv.x*7.0+uTime*.4)*1.6)*.5+.5;
-      float w2=sin(vUv.y*5.8-uTime*1.8+vUv.x*11.0)*.5+.5;
-      float glint=smoothstep(.72,1.0,w1*w2*1.5);
-      vec3 c=mix(uCol,uLit,w1*w2*.35+glint*.5);
-      float e=min(vUv.x,1.0-vUv.x);
-      c=mix(vec3(.93,.95,.97),c,smoothstep(.02,.1,e));                       // pena pri brehu
-      float a=smoothstep(.0,.05,e)*.95;
-      gl_FragColor=vec4(c*uTint,a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+      float d=abs(vUv.x-.5)*2.0*${f3(RIVER_HALF + 2.4)};
+      float fade=(1.0-smoothstep(86.0,100.0,abs(vW.x)))*(1.0-smoothstep(86.0,100.0,abs(vW.z)));
+      float depth=${f3(WATER_Y)}-bedH(d)*fade;                                   // hĺbka vody nad dnom
+      if(depth<=0.0) discard;
+      vec2 p=vW.xz; float t=uTime;
+      vec2 g=vec2(cos(p.x*.9+p.y*.6+t*1.3)*.5+cos(p.x*2.1-p.y*1.7+t*2.1)*.25+cos(p.x*4.3+p.y*3.1-t*3.0)*.12,
+                  cos(p.x*.7-p.y*.9+t*1.1)*.5+cos(p.y*2.3+p.x*1.5-t*1.9)*.25+cos(p.y*4.1-p.x*2.7+t*2.7)*.12);
+      vec3 n=normalize(vec3(-g.x*.16,1.0,-g.y*.16));                           // vlnky
+      vec3 v=normalize(cameraPosition-vW);
+      float F=clamp(.04+.96*pow(1.0-max(dot(n,v),0.0),4.0),0.0,1.0);         // Fresnel
+      vec3 r=reflect(-v,n); r.y=abs(r.y);
+      vec3 sky=mix(uHor,uTop,pow(clamp(r.y,0.0,1.0),.55));
+      float sd=max(dot(r,normalize(uSunDir)),0.0);
+      vec3 spec=uSunCol*(pow(sd,220.0)*7.0+pow(sd,30.0)*.4);                  // odlesk slnka
+      vec3 col=mix(uDeep,uShallow,exp(-depth*1.5));
+      col=mix(col,sky,clamp(F*.9+.14,0.0,1.0))+spec;
+      float foam=smoothstep(.2,.0,depth+sin(p.x*5.0+t*2.0)*.04+sin(p.y*4.0-t*1.7)*.04);
+      col=mix(col,vec3(.93,.96,.98),foam*.85);
+      float a=clamp(depth*2.8,0.0,1.0)*.93+F*.07;
+      col*=uTint;
+      float ff=smoothstep(uFogN,uFogF,length(cameraPosition-vW));
+      gl_FragColor=vec4(mix(col,uFogC,ff),a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
 });
 {
   const n = riverPts.length, pos = new Float32Array(n * 6), uv = new Float32Array(n * 4), idx = [];
   for (let i = 0; i < n; i++) {
-    const p = riverPts[i], t = riverTan[i], w = RIVER_HALF * 1.02;
-    pos.set([p.x - t.z * w, .05, p.z + t.x * w, p.x + t.z * w, .05, p.z - t.x * w], i * 6);
+    const p = riverPts[i], t = riverTan[i], w = RIVER_HALF + 2.4;
+    pos.set([p.x - t.z * w, WATER_Y, p.z + t.x * w, p.x + t.z * w, WATER_Y, p.z - t.x * w], i * 6);
     uv.set([0, i * STEP / 5, 1, i * STEP / 5], i * 4);
     if (i < n - 1) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
   }
@@ -1064,7 +1102,7 @@ function destroyBuilding(b) {
   S.destroyed++;
   b.group.visible = false; cityGroup.remove(b.group);
   const lot = b.lot; lot.b = null; lot.timer = rand(16, 30);
-  const rb = new THREE.Mesh(rubbleGeo, rubbleMat); rb.position.set(lot.x, 0, lot.z); rb.scale.set(b.def.w * 1.05, 1, b.def.d * 1.05); rb.rotation.y = lot.yaw !== undefined ? lot.yaw : rand(0, 3); rb.castShadow = true; rb.receiveShadow = true;
+  const rb = new THREE.Mesh(rubbleGeo, rubbleMat); rb.position.set(lot.x, lot.kind === 'bridge' ? -1.2 : 0, lot.z); rb.scale.set(b.def.w * 1.05, 1, b.def.d * 1.05); rb.rotation.y = lot.yaw !== undefined ? lot.yaw : rand(0, 3); rb.castShadow = true; rb.receiveShadow = true;
   cityGroup.add(rb); lot.rubble = rb;
   const i = buildings.indexOf(b); if (i >= 0) buildings.splice(i, 1);
   if (S.destroyed % 50 === 0) news(`Zničených už ${S.destroyed} objektov. Poisťovne sú v panike.`);
@@ -1324,7 +1362,7 @@ function updateDebris(dt) {
     }
     vy -= 16 * dt;
     x += vx * dt; y += vy * dt; z += vz * dt;
-    const hy = D.sy[i] * .5;
+    const hy = D.sy[i] * .5 + heightAt(x, z);
     if (y < hy) { y = hy; if (vy < 0) vy = -vy * .3; vx *= 1 - Math.min(1, dt * 6); vz *= 1 - Math.min(1, dt * 6); D.wx[i] *= .9; D.wy[i] *= .9; D.wz[i] *= .9; if (Math.abs(vy) < .5) vy = 0; }
     D.px[i] = x; D.py[i] = y; D.pz[i] = z; D.vx[i] = vx; D.vy[i] = vy; D.vz[i] = vz;
     D.rx[i] += D.wx[i] * dt; D.ry[i] += D.wy[i] * dt; D.rz[i] += D.wz[i] * dt;
@@ -1423,6 +1461,7 @@ function updateCamera(dt) {
     const sc = sun.shadow.camera; sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = ext * 6 + 140; sc.updateProjectionMatrix();
   }
   scene.fog.near = cam.dist * 1.2; scene.fog.far = cam.dist * 6 + 160;
+  riverMat.uniforms.uFogN.value = scene.fog.near; riverMat.uniforms.uFogF.value = scene.fog.far;
 }
 const ray = new THREE.Raycaster(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
 function screenToWorld(cx, cy) {
