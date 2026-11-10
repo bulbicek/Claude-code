@@ -9,6 +9,8 @@ Otvor `index.html` v prehliadači (funguje aj z `file://`, všetko je v jednom s
 - **Klik** do sveta alebo na radar – nasmeruje tornádo; inak si autopilot vyberá najvýnosnejšie ciele
 - **Ťahanie** – otáčanie kamery, **koliesko / pinch** – zoom
 - **Nový front** (prestíž): od ~200K škody resetuje postup za trvalý bonus ku škodám
+- **Supercela** (⚡ alebo medzerník): 10 s trojnásobná sila a vyššia rýchlosť, potom 75 s nabíjanie
+- **Úlohy**: krátke ciele s odmenou (ničenie budov, áut, mostov…)
 - **1–6** – nákup vylepšení, **M** – zvuk, ×1 / ×10 / MAX – množstvo nákupu
 - Postup sa ukladá (localStorage) a hra zarába aj offline (vylepšenie „Nočná zmena")
 

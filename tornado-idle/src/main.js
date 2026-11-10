@@ -36,7 +36,7 @@ function bakeTexture(c, repeatX) {
    Herný stav, vylepšenia, tiery budov
    ================================================================ */
 const SAVE_KEY = 'tornadoIdle.v1';
-const S = { money: 0, total: 0, pts: 0, fronts: 0, destroyed: 0, rate: 0, muted: false, qty: '1', time: Date.now(),
+const S = { money: 0, total: 0, life: 0, pts: 0, fronts: 0, destroyed: 0, cars: 0, bridges: 0, buys: 0, boosts: 0, qn: 0, qbase: 0, qgoal: 0, rate: 0, muted: false, qty: '1', time: Date.now(),
   lv: { power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 } };
 try {
   const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
@@ -704,7 +704,7 @@ function puff(x, y, z, vx, vy, vz, s0, s1, life, a0, shade, tint) {
    Tornádo – lievik, mraky, dážď
    ================================================================ */
 const T = { x: 0, z: 0, vx: 0, vz: 0 };
-let R = radiusOf(), H = 10 + R * 3.4;
+let R = radiusOf(), H = 14 + R * 4;
 // Tvar lievika sa plynule mení: 0 = lano · .33 = „komín" (stovepipe) · .66 = kužeľ · 1 = široký klin (wedge).
 // Závisí od sily vetra, v čase mierne kolíše a občas sa tornádo „vylanuje" (zúži a skrúti) a opäť naberie silu.
 const SHAPES = [   // [m, polomer pri zemi (×R, +c), polomer hore (×R, +c), exponent profilu, výška ×]
@@ -724,9 +724,10 @@ function updateShape(dt) {
   else { SH.ropeT -= dt; if (SH.ropeT <= 0) { SH.ropeLeft = rand(9, 14); news(pick(['Tornádo sa zužuje do lana a vlní sa – nepodceňujte ho!', 'Pozor: tornádo sa mení na úzke lano, stále je však nebezpečné.'])); } }
   let target = clamp(.2 + S.lv.power * .035, 0, .95) + .14 * Math.sin(time * .09) + .1 * Math.sin(time * .23 + 1.7);
   if (SH.ropeLeft > 0) target *= .1;
+  if (boost.t > 0) target = 1;
   SH.m += (clamp(target, 0, 1) - SH.m) * (1 - Math.exp(-dt * .6));
   applyShape();
-  H = (10 + R * 3.4) * SH.hf;
+  H = (14 + R * 4) * SH.hf;
 }
 const rb = () => SH.rbv, rtop = () => SH.rtv;
 const funnelR = t => SH.rbv + (SH.rtv - SH.rbv) * Math.pow(t, SH.ex) + SH.rtv * .5 * Math.pow(smooth(.78, 1, t), 2);   // na vrchu sa rozlieva do oblaku
@@ -942,7 +943,7 @@ function updateCars(dt) {
     if (!c.alive) continue;
     const dx = T.x - x, dz = T.z - z;
     if (dx * dx + dz * dz < Math.pow(R * 1.05 + 1.3, 2)) {   // auto zasiahnuté tornádom
-      c.alive = false; c.timer = rand(10, 18);
+      c.alive = false; c.timer = rand(10, 18); S.cars++;
       const col = carMesh.instanceColor ? '#' + _c.fromArray(carMesh.instanceColor.array, c.i * 3).getHexString() : '#cccccc';
       for (let k = 0; k < 6; k++) spawnDebris(x + rand(-.6, .6), streetPos.y + rand(.3, 1), z + rand(-.4, .4), rand(-3, 3), rand(2, 6), rand(-3, 3), .3, k < 4 ? col : '#202a36');
       for (let k = 0; k < 4; k++) puff(x, .4, z, rand(-2, 2), rand(.5, 2), rand(-2, 2), 1, 3, rand(1, 1.8), .4, .6);
@@ -1011,6 +1012,43 @@ const riverMat = new THREE.ShaderMaterial({
   const river = new THREE.Mesh(geo, riverMat); river.renderOrder = 1; river.frustumCulled = false; river.matrixAutoUpdate = false;
   scene.add(river);
 }
+// Stopa skazy: tmavé škvrny na zemi tam, kadiaľ tornádo prešlo (jeden mesh, pomaly blednú)
+const TR_N = 160, TR_LIFE = 55, trAge = new Float32Array(TR_N).fill(1e9), trPos = new Float32Array(TR_N * 12), trUv = new Float32Array(TR_N * 8), trA = new Float32Array(TR_N * 4);
+let trI = 0, trLX = 1e9, trLZ = 1e9;
+const trGeo = new THREE.BufferGeometry();
+{
+  const idx = [];
+  for (let i = 0; i < TR_N; i++) { trUv.set([0, 0, 1, 0, 1, 1, 0, 1], i * 8); idx.push(i * 4, i * 4 + 2, i * 4 + 1, i * 4, i * 4 + 3, i * 4 + 2); }
+  trGeo.setAttribute('position', new THREE.BufferAttribute(trPos, 3).setUsage(THREE.DynamicDrawUsage));
+  trGeo.setAttribute('uv', new THREE.BufferAttribute(trUv, 2));
+  trGeo.setAttribute('aA', new THREE.BufferAttribute(trA, 1).setUsage(THREE.DynamicDrawUsage));
+  trGeo.setIndex(idx);
+  const m = new THREE.Mesh(trGeo, new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    vertexShader: 'attribute float aA; varying float vA; varying vec2 vUv; void main(){ vA=aA; vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: 'varying float vA; varying vec2 vUv; void main(){ float r=length(vUv-.5)*2.0; float a=(1.0-smoothstep(.3,1.0,r))*vA; if(a<.004) discard; gl_FragColor=vec4(.05,.035,.02,a); }',
+  }));
+  m.frustumCulled = false; m.renderOrder = .5; m.matrixAutoUpdate = false; scene.add(m);
+}
+function updateTrail(dt) {
+  const dx = T.x - trLX, dz = T.z - trLZ, need = Math.max(1.2, R * .7);
+  if (dx * dx + dz * dz > need * need) {
+    trLX = T.x; trLZ = T.z;
+    if (Math.abs(heightAt(T.x, T.z)) < .05) {        // len na rovnom teréne (nie v koryte)
+      const i = trI, s = R * 1.3 * rand(.85, 1.25), x = T.x + rand(-.3, .3) * R, z = T.z + rand(-.3, .3) * R, y = .04 + i * .0003;
+      trI = (trI + 1) % TR_N; trAge[i] = 0;
+      trPos.set([x - s, y, z - s, x + s, y, z - s, x + s, y, z + s, x - s, y, z + s], i * 12);
+      trGeo.attributes.position.needsUpdate = true;
+    }
+  }
+  for (let i = 0; i < TR_N; i++) {
+    if (trAge[i] > TR_LIFE) continue;
+    trAge[i] += dt;
+    const a = trAge[i] > TR_LIFE ? 0 : .5 * (1 - trAge[i] / TR_LIFE) * Math.min(1, trAge[i] * 1.5);
+    trA[i * 4] = trA[i * 4 + 1] = trA[i * 4 + 2] = trA[i * 4 + 3] = a;
+  }
+  trGeo.attributes.aA.needsUpdate = true;
+}
 const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
   map: (() => { const n = 64, d = new Uint8Array(n * n * 4); for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const r = Math.min(1, Math.hypot(x - 31.5, y - 31.5) / 32), a = 1 - r, k = (y * n + x) * 4; d[k + 3] = a * a * (3 - 2 * a) * 255; }
     const t = new THREE.DataTexture(d, n, n, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t; })(),
@@ -1034,6 +1072,9 @@ function audioInit() {
     AU.wf = c.createBiquadFilter(); AU.wf.type = 'bandpass'; AU.wf.Q.value = .5; AU.wf.frequency.value = 300;
     AU.wg = c.createGain(); AU.wg.gain.value = 0;
     src.connect(AU.wf); AU.wf.connect(AU.wg); AU.wg.connect(AU.master); src.start();
+    const rs = c.createBufferSource(), rf = c.createBiquadFilter(), rgn = c.createGain();          // šum dažďa
+    rs.buffer = buf; rs.loop = true; rs.playbackRate.value = 1.7; rf.type = 'highpass'; rf.frequency.value = 2600; rgn.gain.value = .05;
+    rs.connect(rf); rf.connect(rgn); rgn.connect(AU.master); rs.start(0, 1.3);
     AU.screamBus = c.createGain(); AU.screamBus.gain.value = 0; AU.screamBus.connect(AU.master);
   } catch (e) { AU.ctx = null; }
 }
@@ -1047,6 +1088,15 @@ function burst(freq, gain, dur, rate) {
   s.connect(f); f.connect(g); g.connect(AU.master); s.start(0, Math.random() * 2.5, dur + .1);
 }
 function crashSound(tier) { const n = performance.now(); if (n - lastCrash < 70) return; lastCrash = n; burst(500 + tier * 120, .25 + tier * .06, .35 + tier * .08, 1.4); }
+function tone(freq, dur, vol, delay, type) {
+  if (!AU.ctx || S.muted || AU.ctx.state !== 'running') return;
+  const c = AU.ctx, t = c.currentTime + (delay || 0), o = c.createOscillator(), g = c.createGain();
+  o.type = type || 'triangle'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .012); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(g); g.connect(AU.master); o.start(t); o.stop(t + dur + .03);
+}
+function buySound() { tone(660, .1, .09); tone(990, .14, .08, .07); }
+function questSound() { [523, 659, 784, 1047].forEach((f, i) => tone(f, .22, .1, i * .09)); }
 function thunderSound() { burst(260, .9, 2.4, .7); }
 // keď hru nevidno (minimalizovaná, iná karta, iná aplikácia), zvuk sa úplne pozastaví
 function audioFocus(on) { if (!AU.ctx) return; if (on) AU.ctx.resume(); else AU.ctx.suspend(); }
@@ -1113,7 +1163,7 @@ function updatePops(dt) {
   }
 }
 let income = 0;
-function earn(x) { S.money += x; S.total += x; income += x; }
+function earn(x) { S.money += x; S.total += x; S.life += x; income += x; }
 
 function emitChunks(b, n, burstMode) {
   const def = b.def, sz = (def.csz || def.w * .13) * (burstMode ? 1.15 : 1), bridge = b.lot.kind === 'bridge';
@@ -1143,7 +1193,7 @@ function destroyBuilding(b) {
   floatText(b.x, b.h, b.z, '+' + fmt(b.earned), b.tier);
   cam.shake = Math.min(1.2, cam.shake + .08 + b.tier * .1);
   crashSound(b.tier);
-  S.destroyed++;
+  S.destroyed++; if (b.lot.kind === 'bridge') S.bridges++;
   b.group.visible = false; cityGroup.remove(b.group);
   const lot = b.lot; lot.b = null; lot.timer = rand(16, 30);
   const rb = new THREE.Mesh(rubbleGeo, rubbleMat); rb.position.set(lot.x, lot.kind === 'bridge' ? -1.2 : 0, lot.z); rb.scale.set(b.def.w * 1.05, 1, b.def.d * 1.05); rb.rotation.y = lot.yaw !== undefined ? lot.yaw : rand(0, 3); rb.castShadow = true; rb.receiveShadow = true;
@@ -1169,7 +1219,7 @@ function destroyTree(t) {
 const bolts = [];
 const boltGeo = new THREE.CylinderGeometry(1, 1, 1, 5).translate(0, .5, 0);
 let flash = 0;
-function strike(target) {
+function strike(target, quiet) {
   const grp = new THREE.Group();
   const top = new THREE.Vector3(target.x, target.h || 2, target.z);
   funnelLookup(1);
@@ -1184,12 +1234,12 @@ function strike(target) {
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1], dir = b.clone().sub(a), L = dir.length();
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
-    for (const [m, s] of [[mCore, w], [mGlow, w * 4]]) {
+    for (const [m, s] of [[mCore, w], [mGlow, w * 2.6]]) {
       const c = new THREE.Mesh(boltGeo, m); c.position.copy(a); c.quaternion.copy(q); c.scale.set(s, L, s); c.renderOrder = 10; grp.add(c);
     }
   }
   scene.add(grp); bolts.push({ grp, ttl: .26, mats: [mCore, mGlow] });
-  flash = 1; thunderSound();
+  if (quiet) flash = Math.max(flash, .35); else { flash = 1; thunderSound(); }   // tiché údery (Supercela) nezahlcujú obraz ani zvuk
   for (let i = 0; i < 8; i++) puff(top.x, .4, top.z, rand(-3, 3), rand(.5, 3), rand(-3, 3), 1, 3, .8, .6, 1, [1, 1, 1]);
 }
 
@@ -1256,7 +1306,7 @@ function steer(dt) {
     if (target) { tx = target.x; tz = target.z; } else { tx = T.x + Math.cos(time) * 10; tz = T.z + Math.sin(time) * 10; }
   }
   const dx = tx - T.x, dz = tz - T.z, d = Math.sqrt(dx * dx + dz * dz) || 1;
-  const sp = speedOf() * (manual ? 1 : smooth(0, R * 1.6 + 1.5, d) * .85 + .15);
+  const sp = speedOf() * (boost.t > 0 ? 1.5 : 1) * (manual ? 1 : smooth(0, R * 1.6 + 1.5, d) * .85 + .15);
   const px = -dz / d, pz = dx / d, wob = Math.sin(time * .9) * .25 * Math.min(1, d / 10);
   const wantX = (dx / d + px * wob) * sp, wantZ = (dz / d + pz * wob) * sp;
   const k = 1 - Math.exp(-dt * 1.6);
@@ -1271,6 +1321,13 @@ function commandTo(x, z) {
 /* ================================================================
    Hlavný update
    ================================================================ */
+const BOOST_DUR = 10, BOOST_CD = 75, boost = { t: 0, cd: 0, bolt: 0 };
+function useBoost() {
+  if (boost.cd > 0) return;
+  audioInit(); boost.t = BOOST_DUR; boost.cd = BOOST_CD; boost.bolt = .2; S.boosts++;
+  thunderSound(); flash = 1; cam.shake = Math.max(cam.shake, .8);
+  news('SUPERCELA! Tornádo na 10 sekúnd strojnásobilo silu a zrýchlilo.', true);
+}
 let lightningTimer = 3, tierSeen = unlockedTier(), megaSeen = megaScale(), flashEl = $('flash');
 const rateHist = [];
 let groundAcc = 0;
@@ -1281,7 +1338,10 @@ function update(dt) {
   steer(dt);
   updateFunnelTable();
   blob.position.set(T.x, .08, T.z); blob.scale.setScalar(R * 3.4 + 5);
-  const dps = dpsOf(S.lv.power);
+  if (boost.cd > 0) boost.cd -= dt;
+  if (boost.t > 0) boost.t -= dt;
+  const boosted = boost.t > 0, dps = dpsOf(S.lv.power) * (boosted ? 3 : 1);
+  updateTrail(dt);
 
   // škody na budovách
   for (let i = buildings.length - 1; i >= 0; i--) {
@@ -1327,6 +1387,14 @@ function update(dt) {
     if (lot.rubble && lot.timer < 3) lot.rubble.scale.y = Math.max(.05, lot.timer / 3);
     if (lot.timer <= 0) {
       makeBuilding(lot, false);
+    }
+  }
+  if (boosted) {                                   // počas Supercely udierajú blesky bez ohľadu na úroveň búrky
+    boost.bolt -= dt;
+    if (boost.bolt <= 0) {
+      boost.bolt = .7;
+      const near = buildings.filter(b => b.alive && b.grow >= 1 && Math.hypot(b.x - T.x, b.z - T.z) < 30 + R * 2);
+      if (near.length) { const b = pick(near); strike({ x: b.x, z: b.z, h: b.h * b.group.scale.y }, true); hurt(b, dps); }
     }
   }
   // blesky
@@ -1478,7 +1546,8 @@ function updateClouds(dt) {
     c.sp.position.set(x, y, z);
     const s = (rt * 3.4 + 22) * c.sz; c.sp.scale.set(s, s * .55, 1);
     const dc = camera.position.distanceTo(c.sp.position);
-    c.sp.material.opacity = .85 * clamp((dc - s * .45) / (s * .6), 0, 1);
+    c.sp.material.opacity = .85 * clamp((dc - s * .45) / (s * .6), 0, 1) * clamp((y - camera.position.y + 2) / 8, 0, 1);   // mrak pod úrovňou kamery by zahmlil celý výhľad
+    c.sp.visible = c.sp.material.opacity > .01;
   }
 }
 
@@ -1486,6 +1555,7 @@ function updateClouds(dt) {
    Kamera a vstup
    ================================================================ */
 function updateCamera(dt) {
+  if (performance.now() - lastInput > 12000 && !ptrs.size) cam.yaw += dt * .035;   // pri nečinnosti kamera pomaly obieha (idle pohľad)
   const wantD = (26 + R * 5.4) * cam.zoom * (1 + Math.max(0, 1 - camera.aspect) * .8);
   cam.dist = lerp(cam.dist, wantD, 1 - Math.exp(-dt * 2.5));
   const k = 1 - Math.exp(-dt * 3.2);
@@ -1513,8 +1583,9 @@ function screenToWorld(cx, cy) {
   return ray.ray.intersectPlane(ground, hit) ? hit : null;
 }
 const ptrs = new Map(); let down = null, pinch = 0;
+let lastInput = performance.now();
 canvas.addEventListener('pointerdown', e => {
-  audioInit();
+  audioInit(); lastInput = performance.now();
   canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   down = { x: e.clientX, y: e.clientY, t: performance.now(), moved: 0 };
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
@@ -1535,7 +1606,7 @@ canvas.addEventListener('pointerup', e => {
   ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = 0; if (!ptrs.size) down = null;
 });
 canvas.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); down = null; });
-canvas.addEventListener('wheel', e => { e.preventDefault(); cam.zoom = clamp(cam.zoom * Math.exp(e.deltaY * .001), .45, 2.4); }, { passive: false });
+canvas.addEventListener('wheel', e => { e.preventDefault(); lastInput = performance.now(); cam.zoom = clamp(cam.zoom * Math.exp(e.deltaY * .001), .45, 2.4); }, { passive: false });
 
 /* ================================================================
    UI: vylepšenia, HUD, radar, správy
@@ -1567,6 +1638,30 @@ function askPrestige() {
     newRun(); closeModal(); news('Nový front sa formuje! Mesto sa postavilo odznova.', true);
   };
 }
+// Úlohy: krátkodobé ciele s odmenou (cyklus šiestich typov, náročnosť postupne rastie)
+const QUESTS = [
+  { text: n => `Znič ${n} budov`, goal: L => Math.round(5 * Math.pow(1.7, L)), val: () => S.destroyed },
+  { text: n => `Rozmetaj ${n} ${n < 5 ? 'autá' : 'áut'}`, goal: L => 3 + 2 * L, val: () => S.cars },
+  { text: n => `Kúp ${n} vylepšenia`, goal: () => 3, val: () => S.buys },
+  { text: n => n > 1 ? `Zlom ${n} mosty` : 'Zlom most', goal: L => Math.min(4, 1 + Math.floor(L / 3)), val: () => S.bridges },
+  { text: () => 'Použi Supercelu ⚡', goal: () => 1, val: () => S.boosts },
+  { text: n => `Spôsob škodu ${fmt(n)} €`, goal: () => Math.max(150, Math.round(S.rate * 90)), val: () => S.life },
+];
+const questReward = () => Math.max(20 * (1 + S.qn), S.rate * 45);
+function startQuest() { const q = QUESTS[S.qn % QUESTS.length]; S.qgoal = q.goal(Math.floor(S.qn / QUESTS.length)); S.qbase = q.val(); }
+if (!S.qgoal) startQuest();
+function updateQuest() {
+  const q = QUESTS[S.qn % QUESTS.length], prog = Math.max(0, q.val() - S.qbase);
+  if (prog >= S.qgoal) {
+    const r = questReward(); S.money += r; S.total += r; S.life += r;
+    news(`Úloha splnená: ${q.text(S.qgoal)} – odmena ${fmt(r)} €.`, true); questSound();
+    $('quest').classList.remove('done'); void $('quest').offsetWidth; $('quest').classList.add('done');
+    S.qn++; startQuest(); return updateQuest();
+  }
+  setText($('q-text'), q.text(S.qgoal)); setText($('q-rew'), '+' + fmt(questReward()) + ' €');
+  setText($('q-num'), `${fmt(prog)} / ${fmt(S.qgoal)}`);
+  $('q-bar').style.width = Math.min(100, prog / S.qgoal * 100) + '%';
+}
 function plan(u) {
   const l = S.lv[u.id], cap = u.max === undefined ? Infinity : u.max - l;
   if (cap <= 0) return { n: 0, cost: 0, max: true };
@@ -1577,7 +1672,7 @@ function plan(u) {
 }
 function buy(u) {
   const p = plan(u); if (p.max || S.money < p.cost) return;
-  S.money -= p.cost; S.lv[u.id] += p.n;
+  S.money -= p.cost; S.lv[u.id] += p.n; S.buys += p.n; buySound();
   const names = { power: () => { const k = windKmh(); return `Sila vetra stúpla na ${k} km/h – ${efOf(k)[0]}. Obyvatelia sa zamýšľajú nad presťahovaním.`; },
     radius: () => 'Tornádo sa rozšírilo. Do cesty mu už padá aj susedná ulica.', speed: () => 'Tornádo zrýchlilo – meteorológovia nestíhajú aktualizovať mapy.',
     storm: () => 'Nad oblasťou sa rozbúrila elektrická búrka.', value: () => 'Poisťovne vyplácajú viac. Škody sú rekordné!', offline: () => 'Nočná zmena prináša zisk aj mimo vysielania.' };
@@ -1590,12 +1685,14 @@ window.addEventListener('keydown', e => {
   audioInit();
   if (e.key >= '1' && e.key <= '6') { const u = UPG[+e.key - 1]; if (u) buy(u); }
   else if (e.key === 'm' || e.key === 'M') setMuted(!S.muted);
+  else if (e.key === ' ') { e.preventDefault(); useBoost(); }
+  lastInput = performance.now();
 });
 $('btn-mute').addEventListener('click', () => { audioInit(); setMuted(!S.muted); });
 $('btn-reset').addEventListener('click', () => {
   modal(`<div class="lbl">Nová hra</div><h1>Začať <em>odznova</em>?</h1><p>Všetok postup vrátane prestíže sa stratí.</p><button id="m-yes">ZMAZAŤ</button> <button id="m-no" style="background:#2a4a85;color:#fff">ZRUŠIŤ</button>`);
   $('m-no').onclick = closeModal;
-  $('m-yes').onclick = () => { S.pts = 0; S.fronts = 0; S.destroyed = 0; newRun(); closeModal(); };
+  $('m-yes').onclick = () => { for (const k of ['pts', 'fronts', 'destroyed', 'life', 'cars', 'bridges', 'buys', 'boosts', 'qn', 'qbase', 'qgoal']) S[k] = 0; newRun(); startQuest(); closeModal(); };
 });
 // nový beh (prestíž / reset): vynuluje postup a postaví mesto odznova bez reloadu stránky
 function newRun() {
@@ -1623,7 +1720,9 @@ function refreshUI() {
     setText(e.buy, p.max ? 'MAX' : (p.n > 1 ? `+${p.n} · ` : '') + fmt(p.cost) + ' €');
     e.el.classList.toggle('can', !p.max && S.money >= p.cost);
     e.el.classList.toggle('max', p.max);
+    e.buy.style.setProperty('--p', p.max ? '0%' : Math.min(100, S.money / p.cost * 100).toFixed(0) + '%');   // ako ďaleko som od ceny
   }
+  updateQuest();
   // prestíž
   const g = prestigeGain(), pe = presEl;
   setHTML(pe.ef, g >= 1 ? `+${g} 🌀 · bonus ×${(1 + .2 * (S.pts + g)).toFixed(1)} <b>(teraz ×${prestigeMult().toFixed(1)})</b>` : `Potrebuješ ${fmt(2e5)} škody v tomto fronte · bonus teraz ×${prestigeMult().toFixed(1)}`);
@@ -1631,7 +1730,12 @@ function refreshUI() {
   pe.el.classList.toggle('can', g >= 1);
 }
 let shownMoney = S.money;
+const boostEl = $('boost');
+boostEl.addEventListener('click', useBoost);
 function updateHUD(dt) {
+  boostEl.classList.toggle('on', boost.t > 0); boostEl.classList.toggle('cd', boost.t <= 0 && boost.cd > 0);
+  boostEl.style.setProperty('--cd', (100 - clamp(boost.cd / BOOST_CD, 0, 1) * 100).toFixed(0) + '%');
+  setText($('boost-t'), boost.t > 0 ? Math.ceil(boost.t) + ' s' : boost.cd > 0 ? Math.ceil(boost.cd) + ' s' : 'SUPERCELA');
   shownMoney = lerp(shownMoney, S.money, 1 - Math.exp(-dt * 12));
   if (Math.abs(shownMoney - S.money) < .5) shownMoney = S.money;
   setHTML($('money'), fmt(shownMoney) + ' <small>€</small>');
@@ -1723,7 +1827,7 @@ function offlineClaim(sec, fromHidden) {
   if (sec < 30 || S.rate < .5) return false;
   const eff = offlineEff(S.lv.offline), gain = S.rate * Math.min(sec, 8 * 3600) * eff;
   if (gain < 1) return false;
-  S.money += gain; S.total += gain; shownMoney = S.money - gain;   // nezapočítavať do €/s (inak sa offline zisk násobí)
+  S.money += gain; S.total += gain; S.life += gain; shownMoney = S.money - gain;   // nezapočítavať do €/s (inak sa offline zisk násobí)
   const mins = Math.floor(sec / 60);
   const t = mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`;
   modal(`<div class="lbl">Správa z miesta udalosti</div><h1>Vitaj <em>späť</em></h1><p>Počas tvojej neprítomnosti (${t}) tornádo ďalej ničilo – pri účinnosti ${Math.round(eff * 100)} %.</p><div class="big">+${fmt(gain)} €</div><p>Vylepši „Nočnú zmenu“ pre vyšší offline zisk.</p><button id="m-ok">POKRAČOVAŤ</button>`);
@@ -1749,6 +1853,7 @@ for (const t of trees) writeTree(t, 0);
 treeMesh.instanceMatrix.needsUpdate = true;
 refreshUI(true);
 
+setTimeout(() => { $('hint').style.opacity = 0; }, 30000);
 const firstRun = S.total === 0 && !localStorage.getItem(SAVE_KEY);
 news('Meteorologický ústav varuje: nad regiónom sa formuje tornádo.', true);
 news('Ovládanie: kliknutím nasmeruješ tornádo, inak si cestu hľadá samo.');
@@ -1762,7 +1867,7 @@ if (firstRun) {
 } else if (!offlineClaim(away, false)) { /* nič */ }
 
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;
