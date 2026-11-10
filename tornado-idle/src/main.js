@@ -1023,7 +1023,7 @@ blob.position.y = .08; blob.renderOrder = 1; scene.add(blob);
    ================================================================ */
 const AU = { ctx: null };
 function audioInit() {
-  if (AU.ctx) { if (AU.ctx.state === 'suspended') AU.ctx.resume(); return; }
+  if (AU.ctx) { if (AU.ctx.state === 'suspended' && !document.hidden) AU.ctx.resume(); return; }
   try {
     const c = new (window.AudioContext || window.webkitAudioContext)(); AU.ctx = c;
     AU.master = c.createGain(); AU.master.gain.value = S.muted ? 0 : .6; AU.master.connect(c.destination);
@@ -1034,6 +1034,7 @@ function audioInit() {
     AU.wf = c.createBiquadFilter(); AU.wf.type = 'bandpass'; AU.wf.Q.value = .5; AU.wf.frequency.value = 300;
     AU.wg = c.createGain(); AU.wg.gain.value = 0;
     src.connect(AU.wf); AU.wf.connect(AU.wg); AU.wg.connect(AU.master); src.start();
+    AU.screamBus = c.createGain(); AU.screamBus.gain.value = 0; AU.screamBus.connect(AU.master);
   } catch (e) { AU.ctx = null; }
 }
 let lastCrash = 0;
@@ -1047,9 +1048,42 @@ function burst(freq, gain, dur, rate) {
 }
 function crashSound(tier) { const n = performance.now(); if (n - lastCrash < 70) return; lastCrash = n; burst(500 + tier * 120, .25 + tier * .06, .35 + tier * .08, 1.4); }
 function thunderSound() { burst(260, .9, 2.4, .7); }
+// keď hru nevidno (minimalizovaná, iná karta, iná aplikácia), zvuk sa úplne pozastaví
+function audioFocus(on) { if (!AU.ctx) return; if (on) AU.ctx.resume(); else AU.ctx.suspend(); }
+document.addEventListener('visibilitychange', () => audioFocus(!document.hidden));
+window.addEventListener('pagehide', () => audioFocus(false));
+window.addEventListener('pageshow', () => audioFocus(!document.hidden));
 function setMuted(m) { S.muted = m; $('btn-mute').textContent = m ? '🔇' : '🔊'; if (AU.master) AU.master.gain.value = m ? 0 : .6; }
-function updateAudio() {
+// Výkriky obyvateľov: veľmi tichá vrstva, počuť ju len pri maximálnom priblížení kamery k tornádu
+function scream() {
+  const c = AU.ctx, t = c.currentTime, f0 = rand(850, 1500), dur = rand(.45, 1.1), peak = f0 * rand(1.15, 1.45), pan = c.createStereoPanner ? c.createStereoPanner() : null;
+  const o = c.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(peak, t + dur * .35); o.frequency.exponentialRampToValueAtTime(f0 * .8, t + dur);
+  const lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = rand(5.5, 8); lg.gain.value = f0 * .03; lfo.connect(lg); lg.connect(o.frequency);   // vibrato
+  const g = c.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + .06); g.gain.setValueAtTime(1, t + dur * .5); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  const outNode = pan || g; if (pan) { pan.pan.value = rand(-.8, .8); }
+  for (const [fq, q, vol] of [[1100, 6, 1], [2900, 8, .55]]) {     // formanty „áá“
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = fq * rand(.92, 1.1); bp.Q.value = q;
+    const bg = c.createGain(); bg.gain.value = vol; o.connect(bp); bp.connect(bg); bg.connect(g);
+  }
+  if (pan) g.connect(pan);
+  outNode.connect(AU.screamBus);
+  o.start(t); lfo.start(t); o.stop(t + dur + .05); lfo.stop(t + dur + .05);
+}
+let screamT = 1;
+function updateScreams(dt) {
+  const k = smooth(.66, .46, cam.zoom);                  // 0 = ďaleko, 1 = úplne najbližší zoom
+  AU.screamBus.gain.setTargetAtTime(S.muted ? 0 : .05 * k, AU.ctx.currentTime, .4);
+  if (k < .08 || S.muted) { screamT = 1; return; }
+  screamT -= dt * (.4 + k);
+  if (screamT > 0) return;
+  let crowd = 0; for (const b of buildings) if (b.alive && Math.abs(b.x - T.x) < R * 3 + 16 && Math.abs(b.z - T.z) < R * 3 + 16) crowd++;   // je tam kto kričať?
+  screamT = rand(.7, 2.2);
+  if (crowd > 0 && Math.random() < Math.min(1, .35 + crowd * .1)) { scream(); if (Math.random() < .35) setTimeout(() => AU.ctx && AU.ctx.state === 'running' && scream(), rand(80, 350)); }
+}
+function updateAudio(dt) {
   if (!AU.ctx) return;
+  if (AU.ctx.state === 'running') updateScreams(dt);
   const w = clamp(.04 + S.lv.power * .006 + R * .004, 0, .3);
   AU.wg.gain.setTargetAtTime(S.muted ? 0 : w, AU.ctx.currentTime, .3);
   AU.wf.frequency.setTargetAtTime(220 + S.lv.power * 14 + Math.sin(time) * 30, AU.ctx.currentTime, .3);
@@ -1728,7 +1762,7 @@ if (firstRun) {
 } else if (!offlineClaim(away, false)) { /* nič */ }
 
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;
@@ -1736,7 +1770,7 @@ function frame(now) {
   while (remaining > 1e-6) { const step = Math.min(.05, remaining); update(step); remaining -= step; }
   const dt = rdt;
   for (const t of trees) if (t.dirty) { writeTree(t, time); treeMesh.instanceMatrix.needsUpdate = true; if (!t.alive || (t.shake <= 0 && t.grow >= 1)) t.dirty = false; }
-  updateCamera(dt); updateRain(dt); updatePops(dt); updateAudio();
+  updateCamera(dt); updateRain(dt); updatePops(dt); updateAudio(dt);
   hudT += dt; if (hudT > .1) { updateHUD(hudT); hudT = 0; }
   uiT += dt; if (uiT > .25) { refreshUI(); uiT = 0; }
   radT += dt; if (radT > .08) { drawRadar(); radT = 0; }
