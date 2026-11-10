@@ -111,7 +111,7 @@ scene.fog = new THREE.Fog(0xb9c4cf, 60, 400);
 const camera = new THREE.PerspectiveCamera(48, 1, 1, 2500);
 const cam = { yaw: 0.65, pitch: 0.6, zoom: 1, dist: 40, tx: 0, tz: 0, shake: 0 };
 
-const HALF = 64, BLOCK = 16, NB = 8, WORLD = 92;
+const HALF = 64, WORLD = 92;
 const LAKES = [{ x: 76, z: -68, rx: 15, rz: 9 }, { x: -80, z: 62, rx: 12, rz: 8 }, { x: 70, z: 78, rx: 9, rz: 6 }];
 const inLake = (x, z, pad) => LAKES.some(l => Math.pow((x - l.x) / (l.rx + pad), 2) + Math.pow((z - l.z) / (l.rz + pad), 2) < 1);
 function paintGeo(g, col) { const c = new THREE.Color(col), n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; }
@@ -180,6 +180,148 @@ let shadowExt = 0;
 /* ================================================================
    Zem, hory
    ================================================================ */
+/* ================================================================
+   Pôdorys mesta: kľukaté ulice, rieka, mosty, kruhové objazdy, parky
+   ================================================================ */
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const prng = mulberry32(7731), pr_ = (a, b) => a + prng() * (b - a);
+const STEP = 1.5, RIVER_HALF = 4.2;
+function resample(pts, step) {            // rovnomerné vzorky po oblúku
+  const out = [pts[0]]; let prev = pts[0], need = step;
+  for (let i = 1; i < pts.length; i++) {
+    let a = prev; const b = pts[i]; let d = Math.hypot(b.x - a.x, b.z - a.z);
+    while (d >= need) { const t = need / d, q = { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }; out.push(q); a = q; d = Math.hypot(b.x - a.x, b.z - a.z); need = step; }
+    need -= d; prev = b;
+  }
+  return out;
+}
+function spline(ctrl, step) {             // Catmull-Rom cez kontrolné body
+  const fine = [], n = ctrl.length;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = ctrl[Math.max(0, i - 1)], p1 = ctrl[i], p2 = ctrl[i + 1], p3 = ctrl[Math.min(n - 1, i + 2)];
+    for (let k = 0; k < 12; k++) {
+      const t = k / 12, t2 = t * t, t3 = t2 * t, f = j => .5 * (2 * p1[j] + (-p0[j] + p2[j]) * t + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2 + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3);
+      fine.push({ x: f(0), z: f(1) });
+    }
+  }
+  fine.push({ x: ctrl[n - 1][0], z: ctrl[n - 1][1] });
+  return resample(fine, step);
+}
+const riverPts = spline([[-115, -26], [-80, -18], [-52, -4], [-30, 10], [-6, 14], [18, 6], [40, -6], [64, -12], [95, -4], [115, 10]], STEP);
+const riverTan = riverPts.map((p, i) => { const a = riverPts[Math.max(0, i - 1)], b = riverPts[Math.min(riverPts.length - 1, i + 1)], d = Math.hypot(b.x - a.x, b.z - a.z) || 1; return { x: (b.x - a.x) / d, z: (b.z - a.z) / d }; });
+function distRiver(x, z) { let m = 1e9; for (const p of riverPts) { const d = (p.x - x) * (p.x - x) + (p.z - z) * (p.z - z); if (d < m) m = d; } return Math.sqrt(m); }
+
+const ROADS = [], PLAZAS = [], PARKS = [], BRIDGES = [], JUNCTIONS = [], LOT_SPECS = [];
+const RS = { x: [], z: [], h: [], id: [] };       // všetky vzorky ciest pre dotazy na vzdialenosť
+function addStreet(kind, pts, extra) {
+  const half = kind === 'avenue' ? 3 : 2.1, id = ROADS.length;
+  const st = Object.assign({ id, kind, half, pts, tx: [], tz: [], len: (pts.length - 1) * STEP, y: new Float32Array(pts.length), bridges: [], cap: false }, extra);
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], d = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    st.tx.push((b.x - a.x) / d); st.tz.push((b.z - a.z) / d);
+    RS.x.push(pts[i].x); RS.z.push(pts[i].z); RS.h.push(half); RS.id.push(id);
+  }
+  ROADS.push(st); return st;
+}
+function clearance(x, z, skipId) {        // vzdialenosť od okraja najbližšej cesty / námestia
+  let m = 1e9;
+  for (let i = 0; i < RS.x.length; i++) { if (RS.id[i] === skipId) continue; const dx = RS.x[i] - x, dz = RS.z[i] - z, d = Math.sqrt(dx * dx + dz * dz) - RS.h[i]; if (d < m) m = d; }
+  for (const pl of PLAZAS) m = Math.min(m, Math.hypot(pl.x - x, pl.z - z) - pl.r);
+  return m;
+}
+function tryBranch(par, i0, side) {
+  const nx = -par.tz[i0] * side, nz = par.tx[i0] * side, p0 = par.pts[i0];
+  let x = p0.x + nx * (par.half - .4), z = p0.z + nz * (par.half - .4), ang = Math.atan2(nz, nx) + pr_(-.3, .3);
+  const a0 = ang, curv = pr_(-.045, .045), steps = Math.floor(pr_(14, 28)), pts = [{ x, z }];
+  let end = 'cap';
+  for (let k = 1; k <= steps; k++) {
+    ang += curv + pr_(-.02, .02); x += Math.cos(ang) * STEP; z += Math.sin(ang) * STEP;
+    if (Math.abs(x) > 66 || Math.abs(z) > 66) { end = 'edge'; break; }
+    if (distRiver(x, z) < RIVER_HALF + 7) { end = 'cap'; break; }
+    const c = clearance(x, z, par.id);
+    if (k > 4 && c < 3.6) { pts.push({ x, z }); end = 'join'; break; }
+    if (k > 5 && c < 8.5) { end = 'cap'; break; }
+    pts.push({ x, z });
+  }
+  if (pts.length < 9) return null;
+  JUNCTIONS.push({ x: pts[0].x, z: pts[0].z, a: a0, half: par.half });
+  return addStreet('street', pts, { cap: end === 'cap', parent: par.id });
+}
+function buildPlan() {
+  // hlavné bulváre (kľukaté)
+  const AVS = [
+    ['sever', [[-72, -34], [-44, -24], [-14, -30], [18, -22], [48, -30], [74, -22]], false],
+    ['juh', [[-72, 36], [-40, 34], [-8, 40], [26, 34], [56, 42], [74, 36]], true],
+    ['A', [[-22, -70], [-28, -36], [-16, -6], [-12, 24], [-22, 50], [-18, 70]], true],
+    ['B', [[34, -70], [28, -40], [36, -8], [30, 22], [40, 50], [34, 70]], false],
+    ['C', [[-56, -68], [-52, -32], [-60, -6], [-50, 24], [-58, 50], [-54, 70]], false],
+    ['D', [[62, -68], [58, -36], [66, -10], [60, 20], [66, 48], [62, 70]], false],
+  ];
+  const avs = AVS.map(([name, c, median]) => addStreet('avenue', spline(c, STEP), { name, median }));
+  // kruhové objazdy v najbližších križovatkách bulvárov
+  const hits = [];
+  for (let a = 0; a < avs.length; a++) for (let b = a + 1; b < avs.length; b++) {
+    let best = null;
+    for (const p of avs[a].pts) for (const q of avs[b].pts) { const d = Math.hypot(p.x - q.x, p.z - q.z); if (d < 2 && (!best || d < best.d)) best = { d, x: (p.x + q.x) / 2, z: (p.z + q.z) / 2 }; }
+    if (best && Math.abs(best.x) < 58 && Math.abs(best.z) < 58 && distRiver(best.x, best.z) > RIVER_HALF + 10) hits.push(best);
+  }
+  hits.sort((u, v) => Math.hypot(u.x, u.z) - Math.hypot(v.x, v.z));
+  for (const h of hits.slice(0, 3)) if (!PLAZAS.some(p => Math.hypot(p.x - h.x, p.z - h.z) < 30)) PLAZAS.push({ x: h.x, z: h.z, r: 5.6 });
+  // promenády popri rieke
+  for (const [side, xa, xb] of [[-1, -50, 14], [1, 8, 60]]) {
+    const pts = [];
+    riverPts.forEach((p, i) => { if (p.x < xa || p.x > xb) return; const t = riverTan[i]; pts.push({ x: p.x - t.z * side * (RIVER_HALF + 8.5), z: p.z + t.x * side * (RIVER_HALF + 8.5) }); });
+    if (pts.length > 8) addStreet('street', resample(pts, STEP), { promenade: true });
+  }
+  // vedľajšie ulice: odbočky z bulvárov a promenád, potom z nich ďalšie
+  for (const par of ROADS.filter(r => r.kind === 'avenue' || r.promenade)) for (let s = 9; s < par.len - 9; s += pr_(13, 20)) for (const side of [-1, 1]) if (prng() < .75) tryBranch(par, Math.round(s / STEP), side);
+  for (const par of ROADS.filter(r => r.kind === 'street' && !r.promenade && r.pts.length >= 16)) for (let s = 10; s < par.len - 8; s += pr_(14, 22)) for (const side of [-1, 1]) if (prng() < .45) tryBranch(par, Math.round(s / STEP), side);
+  // mosty: úseky bulvárov v koridore rieky
+  for (const st of avs) {
+    let i = 0; const n = st.pts.length;
+    while (i < n) {
+      if (distRiver(st.pts[i].x, st.pts[i].z) < RIVER_HALF + 2.2) {
+        let j = i; while (j + 1 < n && distRiver(st.pts[j + 1].x, st.pts[j + 1].z) < RIVER_HALF + 2.2) j++;
+        const m = (i + j) >> 1, c = st.pts[m], len = (j - i) * STEP + 5, s0 = i * STEP - 2.5, s1 = j * STEP + 2.5;
+        const br = { st, s0, s1, x: c.x, z: c.z, yaw: -Math.atan2(st.tz[m], st.tx[m]), len, wid: st.half * 2 + 1.8 };
+        BRIDGES.push(br); st.bridges.push(br);
+        for (let k = 0; k < n; k++) { const sk = k * STEP; st.y[k] = Math.max(st.y[k], .3 * clamp(Math.min(sk - (s0 - 3), (s1 + 3) - sk) / 3, 0, 1)); }
+        i = j + 1;
+      } else i++;
+    }
+  }
+  // parky
+  for (let tries = 0; tries < 160 && PARKS.length < 3; tries++) {
+    const x = pr_(-50, 50), z = pr_(-50, 50);
+    if (clearance(x, z, -1) < 14 || distRiver(x, z) < 17 || PARKS.some(p => Math.hypot(p.x - x, p.z - z) < 36)) continue;
+    PARKS.push({ x, z, r: 9, pond: prng() < .6 });
+  }
+  // parcely pozdĺž ulíc – budovy otočené k ulici
+  const placed = [];
+  const fits = (x, z, st) => {
+    if (Math.abs(x) > WORLD - 10 || Math.abs(z) > WORLD - 10) return false;
+    if (distRiver(x, z) < RIVER_HALF + 4.6 || clearance(x, z, -1) < 2.4 || inLake(x, z, 3)) return false;
+    for (const pk of PARKS) if (Math.hypot(pk.x - x, pk.z - z) < pk.r + 2.5) return false;
+    for (const q of placed) if ((q.x - x) * (q.x - x) + (q.z - z) * (q.z - z) < 5.3 * 5.3) return false;
+    return true;
+  };
+  for (const st of ROADS) {
+    for (let s = 4; s < st.len - 3; s += 6.4 + pr_(-.3, .7)) {
+      const i = Math.min(st.pts.length - 1, Math.round(s / STEP)), p = st.pts[i], tx = st.tx[i], tz = st.tz[i];
+      for (const side of [-1, 1]) for (const row of [0, 1]) {
+        if (row === 1 && prng() < .3) continue;
+        const off = st.half + 3.4 + row * 6.2, x = p.x - tz * side * off + pr_(-.4, .4) * row, z = p.z + tx * side * off + pr_(-.4, .4) * row;
+        if (!fits(x, z, st)) continue;
+        placed.push({ x, z });
+        const c = clamp(1 - Math.hypot(x, z) / (HALF * 1.1) + (st.kind === 'avenue' ? .2 : 0), 0, 1);
+        LOT_SPECS.push({ kind: 'house', x, z, yaw: -Math.atan2(tz, tx), c, park: prng() < .08 });
+      }
+    }
+  }
+  for (const br of BRIDGES) LOT_SPECS.push({ kind: 'bridge', x: br.x, z: br.z, yaw: br.yaw, len: br.len, wid: br.wid, c: 1, park: false });
+}
+buildPlan();
+
 function makeGround() {
   const SZ = 2048, W = 200;
   const c = document.createElement('canvas'); c.width = c.height = SZ;
@@ -206,40 +348,48 @@ function makeGround() {
       g.fillStyle = col; g.beginPath(); g.ellipse(cx, cz, l.rx * k * ppu, l.rz * k * ppu, 0.3, 0, 7); g.fill();
     }
   }
-  // cesty vedúce von
-  g.fillStyle = '#55595e';
-  for (let k = 0; k <= NB; k++) {
-    const p = -HALF + k * BLOCK;
-    g.fillRect(px(p) - 2 * ppu, 0, 4 * ppu, SZ);
-    g.fillRect(0, px(p) - 2 * ppu, SZ, 4 * ppu);
+  // parky
+  for (const pk of PARKS) {
+    const cx = px(pk.x), cz = px(pk.z);
+    g.fillStyle = '#7fae5e'; g.beginPath(); g.arc(cx, cz, pk.r * ppu, 0, 7); g.fill();
+    g.fillStyle = '#8cba68'; g.beginPath(); g.arc(cx, cz, pk.r * .8 * ppu, 0, 7); g.fill();
+    g.strokeStyle = '#cdbf95'; g.lineWidth = 1.1 * ppu; g.beginPath(); g.arc(cx, cz, pk.r * .55 * ppu, 0, 7); g.stroke();
+    g.beginPath(); g.moveTo(cx - pk.r * ppu, cz); g.lineTo(cx + pk.r * ppu, cz); g.moveTo(cx, cz - pk.r * ppu); g.lineTo(cx, cz + pk.r * ppu); g.stroke();
+    if (pk.pond) { g.fillStyle = '#3f86b8'; g.beginPath(); g.ellipse(cx, cz, 3 * ppu, 2.2 * ppu, .4, 0, 7); g.fill(); g.fillStyle = '#5aa6d2'; g.beginPath(); g.ellipse(cx, cz, 1.8 * ppu, 1.2 * ppu, .4, 0, 7); g.fill(); }
   }
-  // bloky: chodníky + dvory
-  for (let bx = 0; bx < NB; bx++) for (let bz = 0; bz < NB; bz++) {
-    const x0 = -HALF + bx * BLOCK + 2, z0 = -HALF + bz * BLOCK + 2;
-    g.fillStyle = '#9a9d90'; g.fillRect(px(x0) - 3, px(z0) - 3, 12 * ppu + 6, 12 * ppu + 6);
-    for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
-      g.fillStyle = pick(['#6f9c4f', '#78a556', '#668f49']);
-      g.fillRect(px(x0 + i * 6) + 4, px(z0 + j * 6) + 4, 6 * ppu - 8, 6 * ppu - 8);
-    }
+  // dvory pred domami
+  for (const l of LOT_SPECS) {
+    if (l.kind === 'bridge') continue;
+    g.save(); g.translate(px(l.x), px(l.z)); g.rotate(-l.yaw);
+    g.fillStyle = pick(['#6f9c4f', '#78a556', '#668f49', '#82ad5c']); g.fillRect(-3.3 * ppu, -2.9 * ppu, 6.6 * ppu, 5.8 * ppu);
+    g.restore();
   }
-  // čiary na ceste
-  g.strokeStyle = '#d8d27a'; g.lineWidth = 3; g.setLineDash([22, 22]);
-  for (let k = 0; k <= NB; k++) {
-    const p = px(-HALF + k * BLOCK);
-    g.beginPath(); g.moveTo(p, 0); g.lineTo(p, SZ); g.stroke();
-    g.beginPath(); g.moveTo(0, p); g.lineTo(SZ, p); g.stroke();
+  // cesty: chodník → obrubník → asfalt → značenie
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const trace = (st, w, style) => { g.beginPath(); st.pts.forEach((q, i) => i ? g.lineTo(px(q.x), px(q.z)) : g.moveTo(px(q.x), px(q.z))); g.lineWidth = w * ppu; g.strokeStyle = style; g.stroke(); };
+  const disc = (x, z, r, style) => { g.fillStyle = style; g.beginPath(); g.arc(px(x), px(z), r * ppu, 0, 7); g.fill(); };
+  for (const st of ROADS) { trace(st, st.half * 2 + 2.6, '#9a9d90'); if (st.cap) disc(st.pts[st.pts.length - 1].x, st.pts[st.pts.length - 1].z, st.half + 2.4, '#9a9d90'); }
+  for (const pl of PLAZAS) disc(pl.x, pl.z, pl.r + 1.4, '#9a9d90');
+  for (const st of ROADS) { trace(st, st.half * 2 + .5, '#6b6e66'); if (st.cap) disc(st.pts[st.pts.length - 1].x, st.pts[st.pts.length - 1].z, st.half + .3, '#6b6e66'); }
+  for (const pl of PLAZAS) disc(pl.x, pl.z, pl.r + .3, '#6b6e66');
+  for (const st of ROADS) { trace(st, st.half * 2, '#4a4e54'); if (st.cap) disc(st.pts[st.pts.length - 1].x, st.pts[st.pts.length - 1].z, st.half, '#4a4e54'); }
+  for (const pl of PLAZAS) { disc(pl.x, pl.z, pl.r, '#4a4e54'); disc(pl.x, pl.z, pl.r * .45 + .3, '#8a8d84'); disc(pl.x, pl.z, pl.r * .45, '#6f9c4f'); }
+  for (const st of ROADS) {
+    if (st.median) { trace(st, 1.9, '#8a8d84'); trace(st, 1.4, '#5f9a4a'); }
+    else { g.setLineDash(st.kind === 'avenue' ? [22, 22] : [14, 18]); trace(st, st.kind === 'avenue' ? .2 : .14, st.kind === 'avenue' ? '#d8d27a' : '#d8d8d0'); g.setLineDash([]); }
   }
-  // bordúry blokov a prechody pre chodcov
-  g.strokeStyle = 'rgba(40,40,40,.35)'; g.lineWidth = 3;
-  for (let bx = 0; bx < NB; bx++) for (let bz = 0; bz < NB; bz++) g.strokeRect(px(-HALF + bx * BLOCK + 2) - 3, px(-HALF + bz * BLOCK + 2) - 3, 12 * ppu + 6, 12 * ppu + 6);
-  g.fillStyle = 'rgba(235,235,225,.75)';
-  for (let i = 0; i <= NB; i++) for (let j = 0; j <= NB; j++) {
-    const x = px(-HALF + i * BLOCK), z = px(-HALF + j * BLOCK);
-    for (let k = -3; k <= 3; k++) {
-      g.fillRect(x + k * 11 - 3, z - 2.6 * ppu - 12, 6, 12); g.fillRect(x + k * 11 - 3, z + 2.6 * ppu, 6, 12);
-      g.fillRect(x - 2.6 * ppu - 12, z + k * 11 - 3, 12, 6); g.fillRect(x + 2.6 * ppu, z + k * 11 - 3, 12, 6);
-    }
+  for (const pl of PLAZAS) { disc(pl.x, pl.z, pl.r * .45 + .3, '#8a8d84'); disc(pl.x, pl.z, pl.r * .45, '#6f9c4f'); }   // ostrovček cez značenie
+  // priechody pre chodcov na odbočkách
+  g.fillStyle = 'rgba(235,235,225,.8)';
+  for (const j of JUNCTIONS) {
+    const hx = Math.cos(j.a), hz = Math.sin(j.a), cx = j.x + hx * 2.8, cz = j.z + hz * 2.8;
+    g.save(); g.translate(px(cx), px(cz)); g.rotate(j.a);
+    for (let k = -2; k <= 2; k++) g.fillRect(-1.1 * ppu, (k * .8 - .21) * ppu, 2.2 * ppu, .42 * ppu);
+    g.restore();
   }
+  // rieka: breh, voda, jadro (voda sa navyše animuje samostatným pásom)
+  g.beginPath(); riverPts.forEach((q, i) => i ? g.lineTo(px(q.x), px(q.z)) : g.moveTo(px(q.x), px(q.z)));
+  for (const [w, col] of [[RIVER_HALF * 2 + 5.4, '#c8b98a'], [RIVER_HALF * 2 + 1, '#a89a6e'], [RIVER_HALF * 2, '#3f86b8'], [RIVER_HALF, '#4a93c4']]) { g.lineWidth = w * ppu; g.strokeStyle = col; g.stroke(); }
   for (let i = 0; i < 26000; i++) { // jemná zrnitosť
     g.fillStyle = Math.random() < .5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.06)';
     g.fillRect(rand(0, SZ), rand(0, SZ), randi(1, 3), randi(1, 3));
@@ -330,7 +480,39 @@ function chooseTier(lot) {
   return maxT;
 }
 
+const bridgeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85 });
+function bridgeGeo(len, wid) {
+  const parts = [], add = (g, col) => parts.push(paintGeo(g, col));
+  add(new THREE.BoxGeometry(len, .34, wid).translate(0, .17, 0), '#8e9094');
+  add(new THREE.BoxGeometry(len - .2, .03, wid - 1.9).translate(0, .355, 0), '#4a4e54');
+  for (const sg of [-1, 1]) {
+    add(new THREE.BoxGeometry(len, .12, .2).translate(0, .34 + .6, sg * (wid / 2 - .12)), '#d4d6da');
+    add(new THREE.BoxGeometry(len, .08, .16).translate(0, .34 + .3, sg * (wid / 2 - .12)), '#bfc2c7');
+    for (let x = -len / 2 + .3; x <= len / 2 - .2; x += 2.2) add(new THREE.BoxGeometry(.22, .7, .24).translate(x, .34 + .35, sg * (wid / 2 - .12)), '#c4c7cc');
+  }
+  for (const k of [-.32, 0, .32]) add(new THREE.BoxGeometry(.9, .8, wid * .7).translate(k * len, -.1, 0), '#5c5f66');
+  return mergeGeometries(parts);
+}
+function makeBridge(lot, instant) {                 // most je „budova": má životy, hodnotu, dorastá a dá sa zničiť
+  const ut = unlockedTier(), m = [1, 1.5, 3, 8, 25, 80][ut] * (ut >= 4 ? megaScale() : 1);
+  const def = { name: 'Most', w: lot.len, d: lot.wid, h: .9, hp: 140 * m, val: 100 * m, roof: 'flat', csz: .45 };
+  const g = new THREE.Group(), mesh = new THREE.Mesh(lot.geo || (lot.geo = bridgeGeo(lot.len, lot.wid)), bridgeMat);
+  mesh.castShadow = mesh.receiveShadow = true; g.add(mesh);
+  g.userData.base = new THREE.Vector3(1, 1, 1);
+  g.position.set(lot.x, 0, lot.z); g.rotation.order = 'XZY'; g.rotation.y = lot.yaw;
+  g.scale.setScalar(instant ? 1 : 0.001);
+  g.children.forEach(c => { c.updateMatrix(); c.matrixAutoUpdate = false; });
+  cityGroup.add(g);
+  if (lot.rubble) { cityGroup.remove(lot.rubble); lot.rubble = null; }
+  const hp = def.hp * rand(.9, 1.1);
+  const b = { lot, tier: 3, def, x: lot.x, z: lot.z, group: g, hp, max: hp, value: def.val * rand(.9, 1.1), alive: true, grow: instant ? 1 : 0, shake: 0, acc: 0, emitted: 0,
+    chunks: 30, r: Math.max(lot.len, lot.wid) / 2, h: .9, wallHex: '#8e9094', roofHex: '#d4d6da', lx: 0, lz: 0, earned: 0, glass: false, sy: 1, settled: false };
+  g.scale.setScalar(b.grow || .001);
+  lot.b = b; buildings.push(b);
+  return b;
+}
 function makeBuilding(lot, instant) {
+  if (lot.kind === 'bridge') return makeBridge(lot, instant);
   const tier = chooseTier(lot), def = TIERS[tier];
   const mega = tier >= 4 ? megaScale() : 1;
   const wallHex = pick(WALLS[tier]);
@@ -351,7 +533,7 @@ function makeBuilding(lot, instant) {
   const sx = rand(.88, 1.12), sy = rand(.92, 1.12);
   g.userData.base = new THREE.Vector3(sx, sy, sx);
   g.position.set(lot.x, 0, lot.z);
-  g.rotation.y = Math.random() < .5 ? 0 : Math.PI / 2;
+  g.rotation.order = 'XZY'; g.rotation.y = lot.yaw + (Math.random() < .5 ? 0 : Math.PI);   // tilt okolo svetových osí
   g.scale.setScalar(instant ? 1 : 0.001);
   g.children.forEach(c => { c.updateMatrix(); c.matrixAutoUpdate = false; });
   cityGroup.add(g);
@@ -369,14 +551,11 @@ function makeBuilding(lot, instant) {
 }
 
 function initCity() {
-  for (let bx = 0; bx < NB; bx++) for (let bz = 0; bz < NB; bz++) {
-    const cx = -HALF + bx * BLOCK + BLOCK / 2, cz = -HALF + bz * BLOCK + BLOCK / 2;
-    for (let i = -1; i <= 1; i += 2) for (let j = -1; j <= 1; j += 2) {
-      const x = cx + i * 3, z = cz + j * 3;
-      const lot = { x, z, b: null, timer: 0, rubble: null, c: 1 - clamp(Math.hypot(x, z) / (HALF * 1.1), 0, 1), park: Math.random() < .1 };
-      lots.push(lot);
-      if (!lot.park) makeBuilding(lot, true);
-    }
+  for (const sp of LOT_SPECS) {
+    const lot = Object.assign({ b: null, timer: 0, rubble: null }, sp);
+    lots.push(lot);
+    if (lot.kind === 'bridge') BRIDGES.find(br => br.x === lot.x && br.z === lot.z).lotRef = lot;
+    if (!lot.park) makeBuilding(lot, true);
   }
 }
 
@@ -388,20 +567,29 @@ function initTrees() {
   const paint = (g, col) => { const c = new THREE.Color(col), n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); };
   const trunk = new THREE.CylinderGeometry(.14, .2, 1, 6).translate(0, .5, 0); paint(trunk, '#5b3f2a');
   const geo = mergeGeometries([trunk, pine(1.7, 1.0, .7, '#2f6b3a'), pine(1.4, .75, 1.7, '#3a7d43')].map(g => g.toNonIndexed()));
-  treeMesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9, flatShading: true }), 520);
+  treeMesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9, flatShading: true }), 900);
   treeMesh.castShadow = true; treeMesh.receiveShadow = true; treeMesh.frustumCulled = false;
   treeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   scene.add(treeMesh);
-  const add = (x, z) => inLake(x, z, 1.5) || trees.push({ x, z, sy: rand(.85, 1.3), s: rand(.8, 1.5), rot: rand(0, 6), hp: 5, max: 5, alive: true, grow: 1, shake: 0, timer: 0, idx: trees.length, dirty: true, acc: 0 });
-  let n = 0;
-  while (n < 330) {
+  const houses = lots.filter(l => l.kind !== 'bridge'), nearLot = (x, z, d) => houses.some(l => (l.x - x) * (l.x - x) + (l.z - z) * (l.z - z) < d * d);
+  const add = (x, z, o) => {
+    o = o || {};
+    if (inLake(x, z, 1.5) || distRiver(x, z) < RIVER_HALF + 2.8) return;
+    if (!o.force && (clearance(x, z, -1) < (o.pad === undefined ? 1.8 : o.pad) || (o.lots && nearLot(x, z, 3.4)))) return;
+    trees.push({ x, z, sy: rand(.85, 1.3), s: rand(.8, 1.5), rot: rand(0, 6), hp: 5, max: 5, alive: true, grow: 1, shake: 0, timer: 0, idx: trees.length, dirty: true, acc: 0 });
+  };
+  for (let n = 0, tries = 0; n < 330 && tries < 3000; tries++) {      // lesy za mestom
     const x = rand(-WORLD - 4, WORLD + 4), z = rand(-WORLD - 4, WORLD + 4);
     if (Math.abs(x) < HALF + 3 && Math.abs(z) < HALF + 3) continue;
-    // lesíky
-    if (Math.random() < .5 && n > 4) { const t = trees[randi(0, trees.length - 1)]; add(t.x + rand(-5, 5), t.z + rand(-5, 5)); } else add(x, z);
-    n++;
+    const before = trees.length;
+    if (Math.random() < .5 && trees.length > 4) { const t = trees[randi(0, trees.length - 1)]; add(t.x + rand(-5, 5), t.z + rand(-5, 5)); } else add(x, z);
+    if (trees.length > before) n++;
   }
-  lots.filter(l => l.park).forEach(l => { for (let k = 0; k < 3; k++) add(l.x + rand(-2.2, 2.2), l.z + rand(-2.2, 2.2)); });
+  for (let k = 0; k < 400 && trees.length < 560; k++) add(rand(-HALF, HALF), rand(-HALF, HALF), { lots: true, pad: 2.2 });   // stromy v meste
+  for (const pk of PARKS) for (let k = 0; k < 16; k++) { const a = rand(0, 6.3), r = pk.r * Math.sqrt(Math.random()) * .9; if (pk.pond && Math.hypot(r * Math.cos(a), r * Math.sin(a)) < 4) continue; add(pk.x + Math.cos(a) * r, pk.z + Math.sin(a) * r, { force: true }); }
+  for (const pl of PLAZAS) for (let k = 0; k < 3; k++) { const a = k * 2.1 + .5; add(pl.x + Math.cos(a) * pl.r * .22, pl.z + Math.sin(a) * pl.r * .22, { force: true }); }
+  for (const st of ROADS) if (st.median) for (let i = 3; i < st.pts.length - 3; i += 4) { const q = st.pts[i]; if (!PLAZAS.some(pl => Math.hypot(pl.x - q.x, pl.z - q.z) < pl.r + 1.5)) add(q.x, q.z, { force: true }); }
+  lots.filter(l => l.park).forEach(l => { for (let k = 0; k < 3; k++) add(l.x + rand(-2.2, 2.2), l.z + rand(-2.2, 2.2), { force: true }); });
   trees.forEach(t => {
     t.x = clamp(t.x, -WORLD - 6, WORLD + 6); t.z = clamp(t.z, -WORLD - 6, WORLD + 6);
     const f = rand(.75, 1.25), autumn = Math.random() < .12;
@@ -693,49 +881,87 @@ marker.position.y = .2; marker.visible = false; marker.renderOrder = 5; scene.ad
 const CAR_COLORS = ['#d9d9d9', '#c0392b', '#2c5fa8', '#e0b030', '#3a3a40', '#f0f0f0', '#3d8b5a', '#8e4ea0'];
 const cars = [];
 let carMesh;
-const carEdge = HALF + 6;
+const streetPos = { x: 0, y: 0, z: 0, tx: 1, tz: 0 };
+function streetAt(st, s, lane) {                     // poloha a smer na ulici vo vzdialenosti s (od začiatku), s bočným posunom
+  const f = clamp(s / STEP, 0, st.pts.length - 1.001), i = f | 0, k = f - i, a = st.pts[i], b = st.pts[i + 1];
+  const tx = lerp(st.tx[i], st.tx[i + 1], k), tz = lerp(st.tz[i], st.tz[i + 1], k), d = Math.hypot(tx, tz) || 1;
+  streetPos.tx = tx / d; streetPos.tz = tz / d;
+  streetPos.x = lerp(a.x, b.x, k) - streetPos.tz * lane; streetPos.z = lerp(a.z, b.z, k) + streetPos.tx * lane;
+  streetPos.y = lerp(st.y[i], st.y[i + 1], k);
+}
 function initCars() {
   const geo = mergeGeometries([
     paintGeo(new THREE.BoxGeometry(1.7, .2, .76).translate(0, .22, 0), '#15151a'),
     paintGeo(new THREE.BoxGeometry(1.7, .42, .8).translate(0, .5, 0), '#ffffff'),
     paintGeo(new THREE.BoxGeometry(.9, .36, .7).translate(-.1, .9, 0), '#202a36'),
   ]);
-  const n = LOW ? 24 : 40;
+  const n = LOW ? 24 : 40, routes = ROADS.filter(r => r.len >= 36).sort((a, b) => b.len - a.len);
   carMesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .45, metalness: .35 }), n);
   carMesh.castShadow = true; carMesh.frustumCulled = false; carMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   scene.add(carMesh);
-  for (let i = 0; i < n; i++) {                       // jedno auto na jazdný pruh – navzájom sa nepredbiehajú
-    const axis = i % 2, dir = (i >> 1) % 2 ? 1 : -1, line = (Math.floor(i / 4) * 3 + (i % 4)) % (NB + 1);
-    cars.push({ i, axis, dir, line: -HALF + line * BLOCK, lane: dir * .9, pos: rand(-carEdge, carEdge), speed: 4 + (i % 5) * .9, alive: true, timer: 0 });
+  for (let i = 0; i < n; i++) {
+    const st = routes[i % routes.length], dir = (Math.floor(i / routes.length) + i) % 2 ? 1 : -1;
+    cars.push({ i, st, dir, s: rand(0, st.len), speed: 3.8 + ((st.id * 3 + (dir > 0 ? 1 : 0)) % 5) * .8, alive: true, timer: 0 });   // rovnaká rýchlosť v pruhu – nepredbiehajú sa
     carMesh.setColorAt(i, _c.set(pick(CAR_COLORS)));
   }
 }
 function updateCars(dt) {
   for (const c of cars) {
-    let x, z;
+    const st = c.st;
     if (!c.alive) {
       c.timer -= dt;
-      if (c.timer <= 0) { c.alive = true; c.pos = c.dir > 0 ? -carEdge : carEdge; carMesh.setColorAt(c.i, _c.set(pick(CAR_COLORS))); carMesh.instanceColor.needsUpdate = true; }
+      if (c.timer <= 0) { c.alive = true; c.s = c.dir > 0 ? 0 : st.len; carMesh.setColorAt(c.i, _c.set(pick(CAR_COLORS))); carMesh.instanceColor.needsUpdate = true; }
       else { dummy.scale.set(0, 0, 0); dummy.updateMatrix(); carMesh.setMatrixAt(c.i, dummy.matrix); continue; }
     }
-    c.pos += c.dir * c.speed * dt;
-    if (c.pos > carEdge) c.pos = -carEdge; else if (c.pos < -carEdge) c.pos = carEdge;
-    if (c.axis === 0) { x = c.pos; z = c.line + c.lane; } else { x = c.line + c.lane; z = c.pos; }
+    c.s += c.dir * c.speed * dt;
+    if (c.s > st.len) c.s = 0; else if (c.s < 0) c.s = st.len;
+    streetAt(st, c.s, c.dir * .9);
+    const x = streetPos.x, z = streetPos.z;
+    for (const br of st.bridges) if (c.s > br.s0 && c.s < br.s1 && !br.lotRef.b) { c.alive = false; c.timer = 8; break; }   // most je zničený – auto sa tam nedostane
+    if (!c.alive) continue;
     const dx = T.x - x, dz = T.z - z;
     if (dx * dx + dz * dz < Math.pow(R * 1.05 + 1.3, 2)) {   // auto zasiahnuté tornádom
       c.alive = false; c.timer = rand(10, 18);
       const col = carMesh.instanceColor ? '#' + _c.fromArray(carMesh.instanceColor.array, c.i * 3).getHexString() : '#cccccc';
-      for (let k = 0; k < 6; k++) spawnDebris(x + rand(-.6, .6), rand(.3, 1), z + rand(-.4, .4), rand(-3, 3), rand(2, 6), rand(-3, 3), .3, k < 4 ? col : '#202a36');
+      for (let k = 0; k < 6; k++) spawnDebris(x + rand(-.6, .6), streetPos.y + rand(.3, 1), z + rand(-.4, .4), rand(-3, 3), rand(2, 6), rand(-3, 3), .3, k < 4 ? col : '#202a36');
       for (let k = 0; k < 4; k++) puff(x, .4, z, rand(-2, 2), rand(.5, 2), rand(-2, 2), 1, 3, rand(1, 1.8), .4, .6);
       const e = 3 * valueMult(); earn(e); crashSound(0);
       continue;
     }
-    dummy.position.set(x, 0, z);
-    dummy.rotation.set(0, c.axis === 0 ? (c.dir > 0 ? 0 : Math.PI) : (c.dir > 0 ? -Math.PI / 2 : Math.PI / 2), 0);
+    dummy.position.set(x, streetPos.y, z);
+    dummy.rotation.set(0, -Math.atan2(c.dir * streetPos.tz, c.dir * streetPos.tx), 0);
     dummy.scale.set(1, 1, 1); dummy.updateMatrix();
     carMesh.setMatrixAt(c.i, dummy.matrix);
   }
   carMesh.instanceMatrix.needsUpdate = true;
+}
+const riverMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, fog: false,
+  uniforms: { uTime: { value: 0 }, uCol: { value: new THREE.Color('#3f86b8') }, uLit: { value: new THREE.Color('#9fd2ee') }, uTint: { value: tubeTint } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: `uniform float uTime; uniform vec3 uCol,uLit,uTint; varying vec2 vUv;
+    void main(){
+      float w1=sin(vUv.y*2.4-uTime*1.1+sin(vUv.x*7.0+uTime*.4)*1.6)*.5+.5;
+      float w2=sin(vUv.y*5.8-uTime*1.8+vUv.x*11.0)*.5+.5;
+      float glint=smoothstep(.72,1.0,w1*w2*1.5);
+      vec3 c=mix(uCol,uLit,w1*w2*.35+glint*.5);
+      float e=min(vUv.x,1.0-vUv.x);
+      c=mix(vec3(.93,.95,.97),c,smoothstep(.02,.1,e));                       // pena pri brehu
+      float a=smoothstep(.0,.05,e)*.95;
+      gl_FragColor=vec4(c*uTint,a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+});
+{
+  const n = riverPts.length, pos = new Float32Array(n * 6), uv = new Float32Array(n * 4), idx = [];
+  for (let i = 0; i < n; i++) {
+    const p = riverPts[i], t = riverTan[i], w = RIVER_HALF * 1.02;
+    pos.set([p.x - t.z * w, .05, p.z + t.x * w, p.x + t.z * w, .05, p.z - t.x * w], i * 6);
+    uv.set([0, i * STEP / 5, 1, i * STEP / 5], i * 4);
+    if (i < n - 1) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.setIndex(idx);
+  const river = new THREE.Mesh(geo, riverMat); river.renderOrder = 1; river.frustumCulled = false; river.matrixAutoUpdate = false;
+  scene.add(river);
 }
 const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
   map: (() => { const n = 64, d = new Uint8Array(n * n * 4); for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const r = Math.min(1, Math.hypot(x - 31.5, y - 31.5) / 32), a = 1 - r, k = (y * n + x) * 4; d[k + 3] = a * a * (3 - 2 * a) * 255; }
@@ -808,8 +1034,13 @@ let income = 0;
 function earn(x) { S.money += x; S.total += x; income += x; }
 
 function emitChunks(b, n, burstMode) {
-  const def = b.def, sz = def.w * .13 * (burstMode ? 1.15 : 1);
+  const def = b.def, sz = (def.csz || def.w * .13) * (burstMode ? 1.15 : 1), bridge = b.lot.kind === 'bridge';
   for (let k = 0; k < n; k++) {
+    if (bridge) {                                   // úlomky mosta pozdĺž jeho dĺžky
+      const u = rand(-.5, .5) * b.lot.len, v = rand(-.5, .5) * b.lot.wid, cy = Math.cos(b.lot.yaw), sy = Math.sin(b.lot.yaw), out = burstMode ? rand(2, 6) : rand(.5, 2), a = rand(0, 6.3);
+      spawnDebris(b.x + cy * u + sy * v, rand(.1, .9), b.z - sy * u + cy * v, Math.cos(a) * out, rand(1, burstMode ? 7 : 3), Math.sin(a) * out, sz * rand(.6, 1.6), Math.random() < .3 ? '#5c5f66' : b.wallHex);
+      continue;
+    }
     const a = rand(0, 6.3), r = rand(0, b.r), y = rand(.1, 1) * b.h * b.group.scale.y;
     const col = b.glass && Math.random() < .35 ? '#9fd0f0' : Math.random() < .25 ? b.roofHex : Math.random() < .2 ? '#8d8a85' : b.wallHex;
     const out = burstMode ? rand(2, 7) : rand(.5, 2);
@@ -833,7 +1064,7 @@ function destroyBuilding(b) {
   S.destroyed++;
   b.group.visible = false; cityGroup.remove(b.group);
   const lot = b.lot; lot.b = null; lot.timer = rand(16, 30);
-  const rb = new THREE.Mesh(rubbleGeo, rubbleMat); rb.position.set(lot.x, 0, lot.z); rb.scale.set(b.def.w * 1.05, 1, b.def.d * 1.05); rb.rotation.y = rand(0, 3); rb.castShadow = true; rb.receiveShadow = true;
+  const rb = new THREE.Mesh(rubbleGeo, rubbleMat); rb.position.set(lot.x, 0, lot.z); rb.scale.set(b.def.w * 1.05, 1, b.def.d * 1.05); rb.rotation.y = lot.yaw !== undefined ? lot.yaw : rand(0, 3); rb.castShadow = true; rb.receiveShadow = true;
   cityGroup.add(rb); lot.rubble = rb;
   const i = buildings.indexOf(b); if (i >= 0) buildings.splice(i, 1);
   if (S.destroyed % 50 === 0) news(`Zničených už ${S.destroyed} objektov. Poisťovne sú v panike.`);
@@ -901,7 +1132,7 @@ function updateWeather(dt) {
   const warm = smooth(.95, .6, el) * .6;
   sun.color.copy(C_WHITE).lerp(C_WARM, warm);
   skyUniforms.uSunDir.value.copy(sunDir); skyUniforms.uSunCol.value.copy(sun.color);
-  sky.position.copy(camera.position); skyUniforms.uTime.value = time;
+  sky.position.copy(camera.position); skyUniforms.uTime.value = time; riverMat.uniforms.uTime.value = time;
   if (flash === lastFlash) return;           // zvyšok sa mení iba pri blesku
   lastFlash = flash;
   sun.intensity = 2.5 + flash * 1.2;
@@ -1334,11 +1565,25 @@ function updateHUD(dt) {
 /* radar */
 const rc = $('radar'), rg = rc.getContext('2d');
 const TIER_COL = ['#6fe08a', '#a8e05a', '#f2d14a', '#f29a3d', '#ee5a4a', '#d94fe0'];
+let radarBase = null;
+function buildRadarBase() {
+  const W = rc.width, c = W / 2, sc = W / (2 * (WORLD + 6)), cv = document.createElement('canvas'); cv.width = cv.height = W;
+  const g = cv.getContext('2d'); g.lineCap = g.lineJoin = 'round';
+  const trace = (pts, w, col) => { g.beginPath(); pts.forEach((q, i) => i ? g.lineTo(c + q.x * sc, c + q.z * sc) : g.moveTo(c + q.x * sc, c + q.z * sc)); g.lineWidth = w; g.strokeStyle = col; g.stroke(); };
+  for (const pk of PARKS) { g.fillStyle = 'rgba(60,140,90,.35)'; g.beginPath(); g.arc(c + pk.x * sc, c + pk.z * sc, pk.r * sc, 0, 7); g.fill(); }
+  trace(riverPts, RIVER_HALF * 2 * sc, '#1f6fb5');
+  for (const st of ROADS) trace(st.pts, Math.max(1.5, st.half * sc * 1.1), st.kind === 'avenue' ? 'rgba(150,190,230,.55)' : 'rgba(110,150,200,.4)');
+  for (const pl of PLAZAS) { g.fillStyle = 'rgba(150,190,230,.55)'; g.beginPath(); g.arc(c + pl.x * sc, c + pl.z * sc, pl.r * sc, 0, 7); g.fill(); }
+  radarBase = cv;
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && radarBase) buildRadarBase(); });   // mobil môže zahodiť obsah skrytého canvasu
 function drawRadar() {
+  if (!radarBase) buildRadarBase();
   const W = rc.width, c = W / 2, sc = W / (2 * (WORLD + 6)), X = x => c + x * sc, Y = z => c + z * sc;
   rg.clearRect(0, 0, W, W);
   rg.save(); rg.beginPath(); rg.arc(c, c, c - 2, 0, 7); rg.clip();
   rg.fillStyle = '#06224a'; rg.fillRect(0, 0, W, W);
+  rg.drawImage(radarBase, 0, 0);
   rg.strokeStyle = 'rgba(110,193,255,.22)'; rg.lineWidth = 1;
   for (let i = 1; i <= 4; i++) { rg.beginPath(); rg.arc(c, c, c * i / 4, 0, 7); rg.stroke(); }
   rg.beginPath(); rg.moveTo(c, 0); rg.lineTo(c, W); rg.moveTo(0, c); rg.lineTo(W, c); rg.stroke();
