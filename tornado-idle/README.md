@@ -21,3 +21,12 @@ Otvor `index.html` v prehliadači (funguje aj z `file://`, všetko je v jednom s
 npm install
 npm run build   # src/main.js + src/template.html (+ three.js) -> index.html
 ```
+
+## Android (APK)
+Hotový balík je `android/TornadoIdle.apk` – obal s WebView, ktorý obsahuje `index.html` a beží offline.
+Zostavenie bez Gradle (po `npm run build`):
+```
+BUILD_TOOLS=<android-sdk>/build-tools/34.0.0 ANDROID_JAR=<android-sdk>/platforms/android-34/android.jar android/build-apk.sh
+```
+Skript si pri prvom spustení vytvorí podpisový kľúč `android/sideload.keystore` (nie je v repozitári).
+Aktualizácia sa dá nainštalovať cez staršiu verziu len vtedy, keď je podpísaná tým istým kľúčom – inak treba aplikáciu najprv odinštalovať.
