@@ -656,12 +656,13 @@ function spawnDebris(x, y, z, vx, vy, vz, size, hex, life) {
    Čiastice (prach, víry)
    ================================================================ */
 const pUniforms = { uScale: { value: 1000 }, uTint: { value: new THREE.Color(1, 1, 1) } };
+// Pozn.: v shaderi sa nepoužíva smoothstep s obrátenými hranicami (v GLSL nedefinované) a NaN alfa sa zahadzuje.
 const pMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, uniforms: pUniforms,
   vertexShader: `attribute float aSize; attribute float aAlpha; attribute vec3 aColor; uniform float uScale; varying float vA; varying vec3 vC;
     void main(){ vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv; gl_PointSize=min(aSize*uScale/max(-mv.z,0.1),400.0); vA=aAlpha; vC=aColor; }`,
   fragmentShader: `uniform vec3 uTint; varying float vA; varying vec3 vC;
-    void main(){ float d=length(gl_PointCoord-0.5); float a=(1.0-smoothstep(0.05,0.5,d))*clamp(vA,0.0,1.0); if(!(a>=0.004)) discard;   // smoothstep s obrátenými hranicami je v GLSL nedefinovaný; NaN sa zahodí gl_FragColor=vec4(vC*uTint,a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+    void main(){ float d=length(gl_PointCoord-0.5); float a=(1.0-smoothstep(0.05,0.5,d))*clamp(vA,0.0,1.0); if(!(a>=0.004)) discard; gl_FragColor=vec4(vC*uTint,a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
 });
 class Particles {
   constructor(n, order) {
