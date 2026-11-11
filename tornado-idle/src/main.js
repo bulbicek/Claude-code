@@ -661,7 +661,7 @@ const pMat = new THREE.ShaderMaterial({
   vertexShader: `attribute float aSize; attribute float aAlpha; attribute vec3 aColor; uniform float uScale; varying float vA; varying vec3 vC;
     void main(){ vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv; gl_PointSize=min(aSize*uScale/max(-mv.z,0.1),400.0); vA=aAlpha; vC=aColor; }`,
   fragmentShader: `uniform vec3 uTint; varying float vA; varying vec3 vC;
-    void main(){ float d=length(gl_PointCoord-0.5); float a=smoothstep(0.5,0.05,d)*vA; if(a<0.004) discard; gl_FragColor=vec4(vC*uTint,a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+    void main(){ float d=length(gl_PointCoord-0.5); float a=(1.0-smoothstep(0.05,0.5,d))*clamp(vA,0.0,1.0); if(!(a>=0.004)) discard;   // smoothstep s obrátenými hranicami je v GLSL nedefinovaný; NaN sa zahodí gl_FragColor=vec4(vC*uTint,a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
 });
 class Particles {
   constructor(n, order) {
@@ -1528,7 +1528,8 @@ function updatePuffs(dt) {
   for (let i = 0; i < PF; i++) {
     if (pf.life[i] <= 0) { puffs.alpha[i] = 0; puffs.size[i] = 0; continue; }
     pf.life[i] -= dt;
-    const p = 1 - pf.life[i] / pf.max[i], d = 1 - Math.min(1, dt * 1.5);
+    if (pf.life[i] <= 0) { pf.life[i] = 0; puffs.alpha[i] = 0; puffs.size[i] = 0; continue; }   // koniec života: nikdy nepočítať so zápornou hodnotou (NaN → nepriehľadná guľa)
+    const p = clamp(1 - pf.life[i] / pf.max[i], 0, 1), d = 1 - Math.min(1, dt * 1.5);
     pf.vx[i] *= d; pf.vz[i] *= d; pf.vy[i] = pf.vy[i] * d + dt * .6;
     puffs.pos[i * 3] += pf.vx[i] * dt; puffs.pos[i * 3 + 1] += pf.vy[i] * dt; puffs.pos[i * 3 + 2] += pf.vz[i] * dt;
     // záchvat vetra – kúdoly sa točia okolo tornáda
@@ -1933,7 +1934,7 @@ if (firstRun) {
 
 let frameNo = 0;
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { puffs, fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;
