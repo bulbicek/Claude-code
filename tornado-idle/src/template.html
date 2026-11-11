@@ -39,6 +39,10 @@ body.cine #vig{background:radial-gradient(ellipse at 50% 45%,transparent 48%,rgb
 .clock{white-space:nowrap;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--navy);font-weight:800;font-size:18px;font-variant-numeric:tabular-nums;clip-path:polygon(14px 0,100% 0,100% 100%,0 100%);padding-left:28px}
 #bar-btns{display:flex;align-items:center;gap:4px;padding:0 8px;background:var(--navy)}
 .ib{background:transparent;border:1px solid var(--line);color:#fff;border-radius:6px;width:30px;height:28px;cursor:pointer;font-size:14px}
+.ib.lang{width:34px;font-size:11px;font-weight:900;letter-spacing:.04em}
+.langsel{display:inline-flex;gap:4px;vertical-align:middle;margin-left:8px}
+.mbox .langsel button{margin:0;padding:3px 9px;font-size:11px;letter-spacing:.06em;background:rgba(255,255,255,.12);color:#cfe2ff;border:1px solid var(--line);border-radius:4px}
+.mbox .langsel button.on{background:var(--yellow);color:#06122b;border-color:var(--yellow)}
 .ib:hover{background:rgba(255,255,255,.12)}
 
 /* stats */
@@ -185,43 +189,43 @@ body.cine #vig{background:radial-gradient(ellipse at 50% 45%,transparent 48%,rgb
 
 <header id="top">
   <div class="brand"><span class="live"><i></i>LIVE</span><b>METEO</b><em>24</em></div>
-  <div class="headline" id="headline">Tornádo · priamy prenos z postihnutej oblasti</div>
-  <div id="bar-btns"><button class="ib" id="btn-cine" title="Filmový vzhľad (C)">🎬</button><button class="ib" id="btn-reset" title="Nová hra">↺</button><button class="ib" id="btn-mute" title="Zvuk (M)">🔊</button></div>
+  <div class="headline" id="headline" data-i="headline">Tornádo · priamy prenos z postihnutej oblasti</div>
+  <div id="bar-btns"><button class="ib lang" id="btn-lang" data-it="tLang">SK</button><button class="ib" id="btn-cine" data-it="tCine">🎬</button><button class="ib" id="btn-reset" data-it="tReset">↺</button><button class="ib" id="btn-mute" data-it="tMute">🔊</button></div>
   <div class="clock"><span id="clockIcon">⛈️</span><span id="clock">12:00</span></div>
 </header>
 
 <section id="left">
   <div class="card">
-    <div class="lbl">Celková spôsobená škoda</div>
+    <div class="lbl" data-i="lblDamage">Celková spôsobená škoda</div>
     <div id="money">0 <small>€</small></div>
     <div class="sub"><span id="rate">+0 €/s</span><span id="destroyed">0 zničených</span></div>
   </div>
   <div class="card">
-    <div class="lbl">Rýchlosť vetra</div>
+    <div class="lbl" data-i="lblWind">Rýchlosť vetra</div>
     <div class="wind"><div><b id="wind">85</b> <span>km/h</span></div><div id="ef" class="ef">TB</div></div>
-    <div class="mini"><span>Priemer <b id="diam">0</b> m</span><span>Zóna <b id="zone">1</b></span></div>
+    <div class="mini"><span><span data-i="diam">Priemer</span> <b id="diam">0</b> m</span><span><span data-i="zone">Zóna</span> <b id="zone">1</b></span></div>
   </div>
   <div class="card" id="quest">
-    <div class="lbl">Úloha <span id="q-rew"></span></div>
+    <div class="lbl"><span data-i="lblQuest">Úloha</span> <span id="q-rew"></span></div>
     <div id="q-text"></div>
     <div class="bar"><i id="q-bar"></i></div><div id="q-num"></div>
   </div>
   <div class="lrow">
     <div id="radarwrap"><span class="rl">RADAR</span><canvas id="radar" width="340" height="340"></canvas></div>
-    <button id="boost" title="Supercela (medzerník)"><span>⚡</span><small id="boost-t">SUPERCELA</small></button>
+    <button id="boost" data-it="boostTitle"><span>⚡</span><small id="boost-t">SUPERCELA</small></button>
   </div>
 </section>
 
 <aside id="panel">
-  <div class="ph"><h2>Predpoveď · <span>Vylepšenia</span></h2>
+  <div class="ph"><h2 data-ih="panelTitle">Predpoveď · <span>Vylepšenia</span></h2>
     <div class="qty" id="qty"><button data-q="1" class="on">×1</button><button data-q="10">×10</button><button data-q="max">MAX</button></div></div>
   <div id="upgrades"></div>
-  <div class="pf"><span>Hra sa ukladá automaticky</span></div>
+  <div class="pf"><span data-i="saved">Hra sa ukladá automaticky</span></div>
 </aside>
 
-<div id="hint">Klik = nasmeruj tornádo · ťahaj = otáčaj kameru · koliesko = zoom · 1–6 = vylepšenia · medzerník = Supercela</div>
+<div id="hint" data-i="hint"></div>
 
-<footer id="ticker"><div class="tk-label">SPRÁVY</div><div class="tk-view"><span id="tk"></span></div></footer>
+<footer id="ticker"><div class="tk-label" data-i="newsLabel">SPRÁVY</div><div class="tk-view"><span id="tk"></span></div></footer>
 
 <div id="modal"><div class="mbox" id="mbox"></div></div>
 

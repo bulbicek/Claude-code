@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { t, lang, setLangCode } from './i18n.js';
 
 /* ================================================================
    Pomocné funkcie
@@ -15,9 +16,10 @@ const SUF = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
 function fmt(n) {
   if (!isFinite(n)) return '∞';
   if (n < 1000) return n < 10 && n % 1 ? n.toFixed(1) : String(Math.floor(n));
-  const i = Math.floor(Math.log10(n) / 3);
+  let i = Math.floor(Math.log10(n) / 3);
   if (i >= SUF.length) return n.toExponential(2).replace('e+', 'e');
-  const v = n / Math.pow(1000, i);
+  let v = n / Math.pow(1000, i);
+  if (v >= 999.5 && i < SUF.length - 1) { v /= 1000; i++; }   // 999.9M sa nezaokrúhli na „1000M“, ale na 1.00B
   return (v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : v.toFixed(0)) + SUF[i];
 }
 
@@ -36,21 +38,23 @@ function bakeTexture(c, repeatX) {
    Herný stav, vylepšenia, tiery budov
    ================================================================ */
 const SAVE_KEY = 'tornadoIdle.v1';
-const S = { money: 0, total: 0, life: 0, pts: 0, fronts: 0, destroyed: 0, cars: 0, bridges: 0, buys: 0, boosts: 0, qn: 0, qbase: 0, qgoal: 0, rate: 0, muted: false, cine: null, qty: '1', time: Date.now(),
+const S = { money: 0, total: 0, life: 0, pts: 0, fronts: 0, destroyed: 0, cars: 0, bridges: 0, buys: 0, boosts: 0, qn: 0, qbase: 0, qgoal: 0, rate: 0, muted: false, cine: null, lang: null, qty: '1', time: Date.now(),
   lv: { power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 } };
 try {
   const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
   if (raw && (raw.v === 1 || raw.v === 2)) { Object.assign(S, raw.s); if (raw.v === 1) { S.pts = Math.min(S.pts || 0, 25); S.rate = 0; } S.lv = Object.assign({ power: 0, radius: 0, speed: 0, storm: 0, value: 0, offline: 0 }, raw.s.lv); }
 } catch (e) { /* ignore */ }
 
+setLangCode(S.lang || (/^(sk|cs)/i.test(navigator.language || '') ? 'sk' : 'en'));
+
 const dpsOf = l => 8 * Math.pow(1.2, l);
 const UPG = [
-  { id: 'power', icon: '💨', name: 'Sila vetra', base: 12, g: 1.6, show: l => fmt(dpsOf(l)) + ' dmg/s' },
-  { id: 'radius', icon: '🌪️', name: 'Priemer vírenia', base: 25, g: 1.7, max: 150, show: l => (2 * radiusAt(l)).toFixed(1) + ' m' },
-  { id: 'speed', icon: '🧭', name: 'Rýchlosť posunu', base: 40, g: 1.75, max: 30, show: l => speedAt(l).toFixed(1) + ' m/s' },
-  { id: 'storm', icon: '⚡', name: 'Búrka s bleskami', base: 300, g: 2.1, show: l => l === 0 ? 'vypnuté' : `${stormInterval(l).toFixed(1)} s · ×${stormCount(l)}` },
-  { id: 'value', icon: '💶', name: 'Poistné plnenia', base: 90, g: 2.05, show: l => '×' + fmt(Math.pow(1.2, l)) },
-  { id: 'offline', icon: '🌙', name: 'Nočná zmena (offline)', base: 400, g: 2.6, max: 15, show: l => Math.round(offlineEff(l) * 100) + ' %' },
+  { id: 'power', icon: '💨', base: 12, g: 1.6, show: l => fmt(dpsOf(l)) + ' ' + t('dmg') },
+  { id: 'radius', icon: '🌪️', base: 25, g: 1.7, max: 150, show: l => (2 * radiusAt(l)).toFixed(1) + ' m' },
+  { id: 'speed', icon: '🧭', base: 40, g: 1.75, max: 30, show: l => speedAt(l).toFixed(1) + ' m/s' },
+  { id: 'storm', icon: '⚡', base: 300, g: 2.1, show: l => l === 0 ? t('off') : `${stormInterval(l).toFixed(1)} s · ×${stormCount(l)}` },
+  { id: 'value', icon: '💶', base: 90, g: 2.05, show: l => '×' + fmt(Math.pow(1.2, l)) },
+  { id: 'offline', icon: '🌙', base: 400, g: 2.6, max: 15, show: l => Math.round(offlineEff(l) * 100) + ' %' },
 ];
 const stormInterval = l => 7 / (1 + 0.18 * (l - 1));
 const stormCount = l => 1 + Math.floor((l - 1) / 6);
@@ -73,16 +77,16 @@ function efOf(k) {
   if (k >= 178) return ['EF2', '#e6e84a'];
   if (k >= 138) return ['EF1', '#9be85f'];
   if (k >= 105) return ['EF0', '#8be28b'];
-  return ['TB', '#8fd3ff'];
+  return [t('tb'), '#8fd3ff'];
 }
 
 const TIERS = [
-  { name: 'Domček', w: 2.4, d: 2.4, h: 1.9, hp: 14, val: 7, roof: 'pitch', rows: 1, cols: 2, unlock: 0 },
-  { name: 'Rodinný dom', w: 3.4, d: 3.0, h: 2.7, hp: 40, val: 24, roof: 'pitch', rows: 2, cols: 3, unlock: 150 },
-  { name: 'Panelák', w: 4.6, d: 3.4, h: 6.6, hp: 160, val: 110, roof: 'flat', rows: 7, cols: 5, unlock: 2500 },
-  { name: 'Kancelárska budova', w: 4.2, d: 4.2, h: 8.8, hp: 700, val: 560, roof: 'flat', rows: 9, cols: 6, unlock: 40000 },
-  { name: 'Mrakodrap', w: 3.8, d: 3.8, h: 16, hp: 3600, val: 3200, roof: 'flat', rows: 16, cols: 5, unlock: 1e6 },
-  { name: 'Megaveža', w: 4.4, d: 4.4, h: 25.6, hp: 20000, val: 20000, roof: 'flat', rows: 26, cols: 6, unlock: 3e7 },
+  { w: 2.4, d: 2.4, h: 1.9, hp: 14, val: 7, roof: 'pitch', rows: 1, cols: 2, unlock: 0 },
+  { w: 3.4, d: 3.0, h: 2.7, hp: 40, val: 24, roof: 'pitch', rows: 2, cols: 3, unlock: 150 },
+  { w: 4.6, d: 3.4, h: 6.6, hp: 160, val: 110, roof: 'flat', rows: 7, cols: 5, unlock: 2500 },
+  { w: 4.2, d: 4.2, h: 8.8, hp: 700, val: 560, roof: 'flat', rows: 9, cols: 6, unlock: 40000 },
+  { w: 3.8, d: 3.8, h: 16, hp: 3600, val: 3200, roof: 'flat', rows: 16, cols: 5, unlock: 1e6 },
+  { w: 4.4, d: 4.4, h: 25.6, hp: 20000, val: 20000, roof: 'flat', rows: 26, cols: 6, unlock: 3e7 },
 ];
 const WALLS = [
   ['#e8d9c5', '#d9a38a', '#c9d6b0', '#b7cbe0', '#e7c9c9', '#f0e6b8'],
@@ -525,7 +529,7 @@ function bridgeGeo(len, wid) {
 }
 function makeBridge(lot, instant) {                 // most je „budova": má životy, hodnotu, dorastá a dá sa zničiť
   const ut = unlockedTier(), m = [1, 1.5, 3, 8, 25, 80][ut] * (ut >= 4 ? megaScale() : 1);
-  const def = { name: 'Most', w: lot.len, d: lot.wid, h: .9, hp: 140 * m, val: 100 * m, roof: 'flat', csz: .45 };
+  const def = { w: lot.len, d: lot.wid, h: .9, hp: 140 * m, val: 100 * m, roof: 'flat', csz: .45 };
   const g = new THREE.Group(), mesh = new THREE.Mesh(lot.geo || (lot.geo = bridgeGeo(lot.len, lot.wid)), bridgeMat);
   mesh.castShadow = mesh.receiveShadow = true; g.add(mesh);
   g.userData.base = new THREE.Vector3(1, 1, 1);
@@ -743,8 +747,8 @@ function applyShape() {
   SH.rbv = L(a[1], b[1]) * R + L(a[2], b[2]); SH.rtv = L(a[3], b[3]) * R + L(a[4], b[4]); SH.ex = L(a[5], b[5]); SH.hf = L(a[6], b[6]);
 }
 function updateShape(dt) {
-  if (SH.ropeLeft > 0) { SH.ropeLeft -= dt; if (SH.ropeLeft <= 0) { SH.ropeT = rand(170, 280); news('Tornádo opäť naberá silu a rozširuje sa.'); } }
-  else { SH.ropeT -= dt; if (SH.ropeT <= 0) { SH.ropeLeft = rand(24, 34); news(pick(['Tornádo sa zužuje do lana a vlní sa – nepodceňujte ho!', 'Pozor: tornádo sa mení na úzke lano, stále je však nebezpečné.'])); } }
+  if (SH.ropeLeft > 0) { SH.ropeLeft -= dt; if (SH.ropeLeft <= 0) { SH.ropeT = rand(170, 280); news(t('ropeEnd')); } }
+  else { SH.ropeT -= dt; if (SH.ropeT <= 0) { SH.ropeLeft = rand(24, 34); news(pick(t('ropeStart'))); } }
   let target = clamp(.2 + S.lv.power * .035, 0, .95) + .14 * Math.sin(time * .03) + .1 * Math.sin(time * .075 + 1.7);
   if (SH.ropeLeft > 0) target *= .1;
   if (boost.t > 0) target = 1;
@@ -1224,14 +1228,14 @@ function destroyBuilding(b) {
   S.destroyed++; if (b.lot.kind === 'bridge') S.bridges++;
   else if (fires.length < 8 && Math.random() < .22) {     // občas po budove ostane požiar
     fires.push({ x: b.x, z: b.z, t: 0, s: clamp(b.def.w * .45, .9, 2.2), fa: 0, sa: 0 });
-    if (Math.random() < .3) news(pick(['Hasiči hlásia požiar v ruinách. Hasičská stanica tiež horí.', 'V troskách vypukol požiar. Dym je vidieť až za hranice okresu.', 'Horí. Hasiči sú na ceste, cesta však nie je na mieste.', 'Plameň v ruinách: plynári prosia obyvateľov, aby nefajčili.']));
+    if (Math.random() < .3) news(pick(t('fire')));
   }
   b.group.visible = false; cityGroup.remove(b.group);
   const lot = b.lot; lot.b = null; lot.timer = rand(16, 30);
   const rb = new THREE.Mesh(rubbleGeo, rubbleMat); rb.position.set(lot.x, lot.kind === 'bridge' ? -1.2 : 0, lot.z); rb.scale.set(b.def.w * 1.05, 1, b.def.d * 1.05); rb.rotation.y = lot.yaw !== undefined ? lot.yaw : rand(0, 3); rb.castShadow = true; rb.receiveShadow = true;
   cityGroup.add(rb); lot.rubble = rb;
   const i = buildings.indexOf(b); if (i >= 0) buildings.splice(i, 1);
-  if (S.destroyed % 50 === 0) news(`Zničených už ${S.destroyed} objektov. Poisťovne sú v panike.`);
+  if (S.destroyed % 50 === 0) news(t('milestone', S.destroyed));
 }
 function hurt(b, dmg) {
   dmg = Math.min(dmg, b.hp);
@@ -1359,7 +1363,7 @@ function useBoost() {
   if (boost.cd > 0) return;
   audioInit(); boost.t = BOOST_DUR; boost.cd = BOOST_CD; boost.bolt = .2; S.boosts++;
   thunderSound(); flash = 1; cam.shake = Math.max(cam.shake, .8);
-  news('SUPERCELA! Tornádo na 10 sekúnd strojnásobilo silu a zrýchlilo.', true);
+  news(t('boostNews'), true);
 }
 let lightningTimer = 3, tierSeen = unlockedTier(), megaSeen = megaScale(), flashEl = $('flash');
 const rateHist = [];
@@ -1446,7 +1450,7 @@ function update(dt) {
         const b = near.splice(randi(0, near.length - 1), 1)[0];
         strike({ x: b.x, z: b.z, h: b.h * b.group.scale.y }); hurt(b, dps * 5);
       }
-      if (Math.random() < .25) news(pick(['Nad mestom sa strieda blesk za bleskom.', 'Meteorológovia: „Zachovajte pokoj, ak sa dá.“', 'Búrková aktivita je extrémna – blesky všade navôkol.']));
+      if (Math.random() < .25) news(pick(t('storm')));
     }
   }
   for (let i = bolts.length - 1; i >= 0; i--) {
@@ -1482,8 +1486,8 @@ function update(dt) {
 
   // povýšenie zóny
   const ut = unlockedTier(), ms = megaScale();
-  if (ut > tierSeen) { tierSeen = ut; news(`Pozor: v zóne pribudli objekty typu „${TIERS[ut].name}“. Vyššia škoda, vyššie zisky!`, true); }
-  if (ms > megaSeen) { megaSeen = ms; news('Mesto sa rozrastá – nové budovy sú ešte vyššie a odolnejšie!', true); }
+  if (ut > tierSeen) { tierSeen = ut; news(t('tierNews', t('tiers')[ut]), true); }
+  if (ms > megaSeen) { megaSeen = ms; news(t('megaNews'), true); }
   rateHist.push([time, income]); income = 0;
   while (rateHist.length && time - rateHist[0][0] > 4) rateHist.shift();
 }
@@ -1654,51 +1658,48 @@ canvas.addEventListener('wheel', e => { e.preventDefault(); lastInput = performa
 const upWrap = $('upgrades'), upEls = {};
 UPG.forEach((u, i) => {
   const el = document.createElement('div'); el.className = 'up';
-  el.innerHTML = `<div class="ic">${u.icon}</div><div><div class="nm">${u.name}<i></i></div><div class="ef2"></div></div><div class="buy"></div>`;
+  el.innerHTML = `<div class="ic">${u.icon}</div><div><div class="nm"><span></span><i></i></div><div class="ef2"></div></div><div class="buy"></div>`;
   el.addEventListener('click', () => { audioInit(); buy(u); });
-  upWrap.appendChild(el); upEls[u.id] = { el, lv: el.querySelector('i'), ef: el.querySelector('.ef2'), buy: el.querySelector('.buy') };
+  upWrap.appendChild(el); upEls[u.id] = { el, nm: el.querySelector('.nm span'), lv: el.querySelector('i'), ef: el.querySelector('.ef2'), buy: el.querySelector('.buy') };
 });
 const presEl = (() => {
   const el = document.createElement('div'); el.className = 'up pres';
-  el.innerHTML = '<div class="ic">🌀</div><div><div class="nm">Nový front<i></i></div><div class="ef2"></div></div><div class="buy"></div>';
+  el.innerHTML = '<div class="ic">🌀</div><div><div class="nm"><span></span><i></i></div><div class="ef2"></div></div><div class="buy"></div>';
   el.addEventListener('click', () => { audioInit(); askPrestige(); });
   upWrap.appendChild(el);
-  return { el, ef: el.querySelector('.ef2'), buy: el.querySelector('.buy') };
+  return { el, nm: el.querySelector('.nm span'), ef: el.querySelector('.ef2'), buy: el.querySelector('.buy') };
 })();
 function askPrestige() {
   const g = prestigeGain();
-  if (g < 1) { news(`Nový front: potrebuješ aspoň ${fmt(PRESTIGE_BASE)} škody v tomto fronte.`, true); return; }
-  modal(`<div class="lbl">Prestíž</div><h1>NOVÝ <em>FRONT</em></h1>
-    <p>Z tornáda sa stane nová tlaková níž. Stratíš peniaze, vylepšenia a mesto sa postaví odznova, ale získaš trvalý bonus.</p>
-    <div class="big">+${g} 🌀</div><p>Bonus ku všetkým škodám: ×${prestigeMult().toFixed(1)} → <b>×${(1 + PRESTIGE_K * (S.pts + g)).toFixed(1)}</b></p>
-    <button id="m-yes">NOVÝ FRONT</button> <button id="m-no" style="background:#2a4a85;color:#fff">ZRUŠIŤ</button>`);
+  if (g < 1) { news(t('prestigeNeedNews', fmt(PRESTIGE_BASE)), true); return; }
+  modal(t('prestigeModal', g, prestigeMult().toFixed(1), (1 + PRESTIGE_K * (S.pts + g)).toFixed(1)));
   $('m-no').onclick = closeModal;
   $('m-yes').onclick = () => {
     S.pts += prestigeGain(); S.fronts++;
-    newRun(); closeModal(); news('Nový front sa formuje! Mesto sa postavilo odznova.', true);
+    newRun(); closeModal(); news(t('prestigeDone'), true);
   };
 }
 // Úlohy: krátkodobé ciele s odmenou (cyklus šiestich typov, náročnosť postupne rastie)
 const QUESTS = [
-  { text: n => `Znič ${n} budov`, goal: L => Math.round(5 * Math.pow(1.7, L)), val: () => S.destroyed },
-  { text: n => `Rozmetaj ${n} ${n < 5 ? 'autá' : 'áut'}`, goal: L => 3 + 2 * L, val: () => S.cars },
-  { text: n => `Kúp ${n} vylepšenia`, goal: () => 3, val: () => S.buys },
-  { text: n => n > 1 ? `Zlom ${n} mosty` : 'Zlom most', goal: L => Math.min(4, 1 + Math.floor(L / 3)), val: () => S.bridges },
-  { text: () => 'Použi Supercelu ⚡', goal: () => 1, val: () => S.boosts },
-  { text: n => `Spôsob škodu ${fmt(n)} €`, goal: () => Math.max(150, Math.round(S.rate * 90)), val: () => S.life },
+  { goal: L => Math.round(5 * Math.pow(1.7, L)), val: () => S.destroyed },
+  { goal: L => 3 + 2 * L, val: () => S.cars },
+  { goal: () => 3, val: () => S.buys },
+  { goal: L => Math.min(4, 1 + Math.floor(L / 3)), val: () => S.bridges },
+  { goal: () => 1, val: () => S.boosts },
+  { goal: () => Math.max(150, Math.round(S.rate * 90)), val: () => S.life },
 ];
 const questReward = () => Math.max(15 + 6 * S.qn, S.rate * 12);
 function startQuest() { const q = QUESTS[S.qn % QUESTS.length]; S.qgoal = q.goal(Math.floor(S.qn / QUESTS.length)); S.qbase = q.val(); }
 if (!S.qgoal) startQuest();
 function updateQuest() {
-  const q = QUESTS[S.qn % QUESTS.length], prog = Math.max(0, q.val() - S.qbase);
+  const qi = S.qn % QUESTS.length, q = QUESTS[qi], prog = Math.max(0, q.val() - S.qbase), qText = () => t('quests')[qi](qi === 5 ? fmt(S.qgoal) : S.qgoal);
   if (prog >= S.qgoal) {
     const r = questReward(); S.money += r; S.total += r; S.life += r;
-    news(`Úloha splnená: ${q.text(S.qgoal)} – odmena ${fmt(r)} €.`, true); questSound();
+    news(t('questDone', qText(), fmt(r)), true); questSound();
     $('quest').classList.remove('done'); void $('quest').offsetWidth; $('quest').classList.add('done');
     S.qn++; startQuest(); return updateQuest();
   }
-  setText($('q-text'), q.text(S.qgoal)); setText($('q-rew'), '+' + fmt(questReward()) + ' €');
+  setText($('q-text'), qText()); setText($('q-rew'), '+' + fmt(questReward()) + ' €');
   setText($('q-num'), `${fmt(prog)} / ${fmt(S.qgoal)}`);
   $('q-bar').style.width = Math.min(100, prog / S.qgoal * 100) + '%';
 }
@@ -1713,10 +1714,8 @@ function plan(u) {
 function buy(u) {
   const p = plan(u); if (p.max || S.money < p.cost) return;
   S.money -= p.cost; S.lv[u.id] += p.n; S.buys += p.n; buySound();
-  const names = { power: () => { const k = windKmh(); return `Sila vetra stúpla na ${k} km/h – ${efOf(k)[0]}. Obyvatelia sa zamýšľajú nad presťahovaním.`; },
-    radius: () => 'Tornádo sa rozšírilo. Do cesty mu už padá aj susedná ulica.', speed: () => 'Tornádo zrýchlilo – meteorológovia nestíhajú aktualizovať mapy.',
-    storm: () => 'Nad oblasťou sa rozbúrila elektrická búrka.', value: () => 'Poisťovne vyplácajú viac. Škody sú rekordné!', offline: () => 'Nočná zmena prináša zisk aj mimo vysielania.' };
-  news(names[u.id](), true);
+  const k = windKmh();
+  news(u.id === 'power' ? t('buy_power', k, efOf(k)[0]) : t('buy_' + u.id), true);
   refreshUI(true);
   save();
 }
@@ -1726,6 +1725,7 @@ window.addEventListener('keydown', e => {
   if (e.key >= '1' && e.key <= '6') { const u = UPG[+e.key - 1]; if (u) buy(u); }
   else if (e.key === 'm' || e.key === 'M') setMuted(!S.muted);
   else if (e.key === ' ') { e.preventDefault(); useBoost(); }
+  else if (e.key === 'l' || e.key === 'L') setLang(lang() === 'sk' ? 'en' : 'sk');
   else if (e.key === 'c' || e.key === 'C') setCine(!document.body.classList.contains('cine'), true);
   lastInput = performance.now();
 });
@@ -1738,11 +1738,25 @@ $('btn-mute').addEventListener('click', () => { audioInit(); setMuted(!S.muted);
   g.putImageData(im, 0, 0);
   $('grain').style.backgroundImage = `url(${cv.toDataURL()})`;      // dataURL – nezávisí od obsahu canvasu
 }
+function applyLang() {
+  document.documentElement.lang = lang(); document.title = t('title');
+  document.querySelectorAll('[data-i]').forEach(el => { el.textContent = t(el.dataset.i); });
+  document.querySelectorAll('[data-ih]').forEach(el => { el.innerHTML = t(el.dataset.ih); });
+  document.querySelectorAll('[data-it]').forEach(el => { el.title = t(el.dataset.it); });
+  $('btn-lang').textContent = lang().toUpperCase();
+}
+function setLang(code) {
+  setLangCode(code); S.lang = lang(); applyLang();
+  flavorBag = []; tkq.length = 0;                      // staré správy v pôvodnom jazyku zahodiť
+  refreshUI(); updateHUD(0); nextNews(); save();
+}
+$('btn-lang').addEventListener('click', () => setLang(lang() === 'sk' ? 'en' : 'sk'));
 function setCine(on, user) { if (user) S.cine = on; document.body.classList.toggle('cine', on); $('btn-cine').style.opacity = on ? 1 : .45; }
 $('btn-cine').addEventListener('click', () => { setCine(!document.body.classList.contains('cine'), true); save(); });
-setCine(S.cine == null ? !LOW : S.cine);   // na mobile je filmový filter predvolene vypnutý (šetrí výkon)
+setCine(S.cine == null ? !LOW : S.cine);
+applyLang();   // na mobile je filmový filter predvolene vypnutý (šetrí výkon)
 $('btn-reset').addEventListener('click', () => {
-  modal(`<div class="lbl">Nová hra</div><h1>Začať <em>odznova</em>?</h1><p>Všetok postup vrátane prestíže sa stratí.</p><button id="m-yes">ZMAZAŤ</button> <button id="m-no" style="background:#2a4a85;color:#fff">ZRUŠIŤ</button>`);
+  modal(t('resetModal'));
   $('m-no').onclick = closeModal;
   $('m-yes').onclick = () => { for (const k of ['pts', 'fronts', 'destroyed', 'life', 'cars', 'bridges', 'buys', 'boosts', 'qn', 'qbase', 'qgoal']) S[k] = 0; newRun(); startQuest(); closeModal(); };
 });
@@ -1767,8 +1781,8 @@ const setText = (el, v) => { if (el._v !== v) { el._v = v; el.textContent = v; }
 function refreshUI() {
   for (const u of UPG) {
     const e = upEls[u.id], l = S.lv[u.id], p = plan(u);
-    setText(e.lv, 'Úr. ' + l);
-    setHTML(e.ef, p.max ? `<b>${u.show(l)}</b> (maximum)` : `${u.show(l)} → <b>${u.show(l + p.n)}</b>`);
+    setText(e.nm, t('up_' + u.id)); setText(e.lv, t('lv') + l);
+    setHTML(e.ef, p.max ? `<b>${u.show(l)}</b> ${t('maximum')}` : `${u.show(l)} → <b>${u.show(l + p.n)}</b>`);
     setText(e.buy, p.max ? 'MAX' : (p.n > 1 ? `+${p.n} · ` : '') + fmt(p.cost) + ' €');
     e.el.classList.toggle('can', !p.max && S.money >= p.cost);
     e.el.classList.toggle('max', p.max);
@@ -1777,8 +1791,9 @@ function refreshUI() {
   updateQuest();
   // prestíž
   const g = prestigeGain(), pe = presEl;
-  setHTML(pe.ef, g >= 1 ? `+${g} 🌀 · bonus ×${(1 + PRESTIGE_K * (S.pts + g)).toFixed(1)} <b>(teraz ×${prestigeMult().toFixed(1)})</b>` : `Potrebuješ ${fmt(PRESTIGE_BASE)} škody v tomto fronte · bonus teraz ×${prestigeMult().toFixed(1)}`);
-  setText(pe.buy, g >= 1 ? 'ZAČAŤ' : 'ZAMKNUTÉ');
+  setText(pe.nm, t('prestigeName'));
+  setHTML(pe.ef, g >= 1 ? t('prestigeGain', g, (1 + PRESTIGE_K * (S.pts + g)).toFixed(1), prestigeMult().toFixed(1)) : t('prestigeNeed', fmt(PRESTIGE_BASE), prestigeMult().toFixed(1)));
+  setText(pe.buy, g >= 1 ? t('start') : t('locked'));
   pe.el.classList.toggle('can', g >= 1);
 }
 let shownMoney = S.money;
@@ -1787,19 +1802,19 @@ boostEl.addEventListener('click', useBoost);
 function updateHUD(dt) {
   boostEl.classList.toggle('on', boost.t > 0); boostEl.classList.toggle('cd', boost.t <= 0 && boost.cd > 0);
   boostEl.style.setProperty('--cd', (100 - clamp(boost.cd / BOOST_CD, 0, 1) * 100).toFixed(0) + '%');
-  setText($('boost-t'), boost.t > 0 ? Math.ceil(boost.t) + ' s' : boost.cd > 0 ? Math.ceil(boost.cd) + ' s' : 'SUPERCELA');
+  setText($('boost-t'), boost.t > 0 ? Math.ceil(boost.t) + ' s' : boost.cd > 0 ? Math.ceil(boost.cd) + ' s' : t('boost'));
   shownMoney = lerp(shownMoney, S.money, 1 - Math.exp(-dt * 12));
   if (Math.abs(shownMoney - S.money) < .5) shownMoney = S.money;
   setHTML($('money'), fmt(shownMoney) + ' <small>€</small>');
   let r = 0; if (rateHist.length > 1) { for (const h of rateHist) r += h[1]; r /= Math.max(.5, rateHist[rateHist.length - 1][0] - rateHist[0][0] + .0001); }
   S.rate = lerp(S.rate, r, .1);
   setText($('rate'), '+' + fmt(S.rate) + ' €/s');
-  setText($('destroyed'), fmt(S.destroyed) + ' zničených');
+  setText($('destroyed'), t('destroyedN', fmt(S.destroyed)));
   const k = windKmh(), ef = efOf(k);
   setText($('wind'), String(k)); setText($('ef'), ef[0]); $('ef').style.background = ef[1];
   setText($('diam'), (2 * R).toFixed(1));
   setText($('zone'), unlockedTier() + 1 + (megaScale() > 1 ? '+' : ''));
-  setText($('clock'), `Front č. ${S.fronts + 1}${S.pts ? ' · ×' + fmt(prestigeMult()) : ''}`);
+  setText($('clock'), t('front', S.fronts + 1) + (S.pts ? ' · ×' + fmt(prestigeMult()) : ''));
 }
 /* radar */
 const rc = $('radar'), rg = rc.getContext('2d');
@@ -1852,27 +1867,8 @@ rc.addEventListener('pointerdown', e => {
 });
 
 /* TV-ticker */
-const FLAVOR = [
-  'Predpoveď na zajtra: tornádo. Opäť.', 'Dopravná situácia: cesty sú voľné, lebo tam už nič nie je.', 'Starosta: „Mali sme zostať doma.“',
-  'Tlak vzduchu klesá, nálada obyvateľov tiež.', 'Poisťovňa oznamuje, že už nikoho nepoistí. Nikdy.', 'Neodporúčame pikniky v okruhu 50 km od vírenia.',
-  'Reportér hlási zo strechy domu. Dom už nie je.', 'Psy sa skrývajú, mačky to riešia po svojom.', 'Zber odpadu odložený. Odpad sa zbiera sám.',
-  'Odborníci: „Čím väčší vietor, tým väčšie ťažkosti.“', 'Tornádo vraj radšej mieri na mrakodrapy. Má rado výhľady.', 'Slnečné prestávky sa dnes nepredpokladajú.',
-  'Realitná kancelária ponúka pozemky s výhľadom. Výhľad je teraz všade.', 'Miestny záhradkár: „Trampolínu som naposledy videl nad kostolom.“',
-  'Krava zo susednej dediny hlási pristátie. Je v poriadku, len zmätená.', 'Pocitová teplota: lietajúca.', 'Biometeorologická záťaž: áno.',
-  'Dáždnik dnes nepomôže. Ani zajtra.', 'Vodiči, pozor: v protismere letí garáž.', 'Pošta doručuje aj dnes. Kam, to nevie nikto.',
-  'Účes dňa: všetky naraz.', 'Susedia sa konečne spoznali. Stretli sa na tej istej streche.', 'Peľová situácia: peľ odletel aj so stromami.',
-  'Meteorológ odmieta komentár a drží sa stĺpa.', 'Školy zatvorené. Žiaci aj tak tvrdia, že úlohu im odfúklo.', 'Pes zjedol domácu úlohu? Nie, tentoraz naozaj tornádo.',
-  'Bielizeň vyvesená ráno už schne v susednom okrese.', 'Veterná elektráreň hlási rekordný výkon aj rekordnú vzdialenosť.', 'Stavebný úrad: „Kolaudácie dnes neprebiehajú. Nie je čo.“',
-  'Navigácia: „Po sto metroch odbočte. Alebo budete odbočení.“', 'Smetiari štrajkujú z princípu. Nemajú čo zbierať.', 'Výstraha tretieho stupňa. Štvrtý stupeň ešte nevymysleli.',
-  'Horoskop pre všetky znamenia: dnes vás niečo zdvihne.', 'Šarkaniáda sa ruší pre nadbytok vetra.', 'Kominár oznamuje, že komíny si dnes čistia samy.',
-  'Rybári hlásia úlovok. Chytili plot.', 'Ceny nehnuteľností klesajú. Doslova, z výšky.', 'Tornádo zatiaľ neodpovedalo na žiadosť o rozhovor.',
-  'Dnešná relácia vzniká v teréne. Štúdio je tiež v teréne, proti našej vôli.', 'Odporúčame vetrať. Vlastne nie, to sa vybaví samo.',
-  'Mestská polícia rozdáva pokuty za nesprávne parkovanie na strechách.', 'Babka z tretieho poschodia: „Za mojich čias fúkalo viac.“',
-  'Holuby dnes lietajú pozadu a hnevajú sa.', 'Dopravný podnik: autobus číslo 7 dnes premáva vzduchom.', 'Futbalový zápas prerušený. Lopta je v inom kraji, bránka tiež.',
-  'Kúpalisko hlási: voda z bazéna prší o dve ulice ďalej.', 'Predavač dáždnikov prvýkrát v živote uvažuje o inej práci.', 'Rosný bod sme stratili. Ak ho nájdete, vráťte ho na ústav.',
-];
 let flavorBag = [];
-function nextFlavor() { if (!flavorBag.length) flavorBag = FLAVOR.slice().sort(() => Math.random() - .5); return flavorBag.pop(); }   // každá hláška raz, kým sa nevyčerpajú
+function nextFlavor() { if (!flavorBag.length) flavorBag = t('flavor').slice().sort(() => Math.random() - .5); return flavorBag.pop(); }   // každá hláška raz, kým sa nevyčerpajú
 const tkq = []; let tkBusy = false; const tkEl = $('tk');
 function news(msg, prio) { if (tkq.length > 6) tkq.pop(); prio ? tkq.unshift(msg) : tkq.push(msg); if (!tkBusy) nextNews(); }
 function nextNews() {
@@ -1880,7 +1876,7 @@ function nextNews() {
   const cw = tkEl.parentElement.clientWidth; document.documentElement.style.setProperty('--cw', cw + 'px');
   const dur = (cw + tkEl.offsetWidth) / 120;
   tkEl.style.animation = 'none'; void tkEl.offsetWidth; tkEl.style.animation = `tk ${dur}s linear forwards`;
-  $('headline').textContent = m.length < 90 ? m : 'Tornádo · priamy prenos z postihnutej oblasti';
+  $('headline').textContent = m.length < 90 ? m : t('headline');
 }
 tkEl.addEventListener('animationend', () => { tkBusy = false; nextNews(); });
 
@@ -1896,8 +1892,7 @@ function offlineClaim(sec, fromHidden) {
   if (gain < 1) return false;
   S.money += gain; S.total += gain; S.life += gain; shownMoney = S.money - gain;   // nezapočítavať do €/s (inak sa offline zisk násobí)
   const mins = Math.floor(sec / 60);
-  const t = mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`;
-  modal(`<div class="lbl">Správa z miesta udalosti</div><h1>Vitaj <em>späť</em></h1><p>Počas tvojej neprítomnosti (${t}) tornádo ďalej ničilo – pri účinnosti ${Math.round(eff * 100)} %.</p><div class="big">+${fmt(gain)} €</div><p>Vylepši „Nočnú zmenu“ pre vyšší offline zisk.</p><button id="m-ok">POKRAČOVAŤ</button>`);
+  modal(t('offlineModal', t('dur', mins), Math.round(eff * 100), fmt(gain)));
   $('m-ok').onclick = () => { audioInit(); closeModal(); };
   return true;
 }
@@ -1922,15 +1917,17 @@ refreshUI(true);
 
 setTimeout(() => { $('hint').style.opacity = 0; }, 30000);
 const firstRun = S.total === 0 && !localStorage.getItem(SAVE_KEY);
-news('Meteorologický ústav varuje: nad regiónom sa formuje tornádo.', true);
-news('Ovládanie: kliknutím nasmeruješ tornádo, inak si cestu hľadá samo.');
+news(t('news1'), true);
+news(t('news2'));
 const away = (Date.now() - S.time) / 1000;
-if (firstRun) {
-  modal(`<span class="live" style="display:inline-flex"><i></i>LIVE</span><h1>TORNÁDO <em>IDLE</em></h1>
-  <p>Vitaj v priamom prenose METEO 24. Malý vír sa blíži k mestu. Ničí domy – za každú škodu dostávaš peniaze, ktoré investuješ do silnejšieho vetra.</p>
-  <ul><li><b>Klik</b> do sveta alebo na radar – nasmeruje tornádo</li><li><b>Ťahanie</b> – otáčanie kamery, <b>koliesko</b> – zoom</li><li>Bez zásahu si tornádo vyberá najvýnosnejšie ciele samo</li><li>Hra sa ukladá a zarába aj keď si preč</li></ul>
-  <button id="m-ok">ŠTART</button>`);
+// Úvodné okno s voľbou jazyka (dá sa prepnúť ešte pred štartom)
+function showIntro() {
+  modal(`<span class="live" style="display:inline-flex"><i></i>LIVE</span> <span class="langsel"><button data-l="sk" class="${lang() === 'sk' ? 'on' : ''}">SK</button><button data-l="en" class="${lang() === 'en' ? 'on' : ''}">EN</button></span>` + t('introModal'));
+  $('mbox').querySelectorAll('.langsel button').forEach(b => { b.onclick = () => { setLang(b.dataset.l); showIntro(); }; });
   $('m-ok').onclick = () => { audioInit(); closeModal(); };
+}
+if (firstRun) {
+  showIntro();
 } else if (!offlineClaim(away, false)) { /* nič */ }
 
 let frameNo = 0;

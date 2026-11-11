@@ -14,6 +14,8 @@ Otvor `index.html` v prehliadači (funguje aj z `file://`, všetko je v jednom s
 - **1–6** – nákup vylepšení, **M** – zvuk, **C** alebo 🎬 – filmový vzhľad (zrno, farebné ladenie), ×1 / ×10 / MAX – množstvo nákupu
 - Postup sa ukladá (localStorage) a hra zarába aj offline (vylepšenie „Nočná zmena")
 
+- **Jazyk**: tlačidlo SK/EN v hornej lište alebo kláves **L** (slovenčina / English), voľba sa ukladá. Texty sú v `src/i18n.js`.
+
 ## Vývoj
 ```
 npm install
