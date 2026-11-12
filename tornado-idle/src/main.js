@@ -84,17 +84,27 @@ const TIERS = [
   { w: 2.4, d: 2.4, h: 1.9, hp: 14, val: 7, roof: 'pitch', rows: 1, cols: 2, unlock: 0 },
   { w: 3.4, d: 3.0, h: 2.7, hp: 40, val: 24, roof: 'pitch', rows: 2, cols: 3, unlock: 180 },
   { w: 4.6, d: 3.4, h: 6.6, hp: 160, val: 110, roof: 'flat', rows: 7, cols: 5, unlock: 3000 },
-  { w: 4.2, d: 4.2, h: 8.8, hp: 700, val: 560, roof: 'flat', rows: 9, cols: 6, unlock: 50000 },
-  { w: 3.8, d: 3.8, h: 16, hp: 3600, val: 3200, roof: 'flat', rows: 16, cols: 5, unlock: 1.3e6 },
-  { w: 4.4, d: 4.4, h: 25.6, hp: 20000, val: 20000, roof: 'flat', rows: 26, cols: 6, unlock: 4e7 },
+  { w: 4.2, d: 4.2, h: 8, hp: 700, val: 560, roof: 'flat', rows: 8, cols: 6, unlock: 50000 },
+  { w: 4.0, d: 4.0, h: 11, hp: 3600, val: 3200, roof: 'flat', rows: 11, cols: 5, unlock: 1.3e6 },
+  { w: 4.6, d: 4.6, h: 15, hp: 20000, val: 20000, roof: 'flat', rows: 15, cols: 6, unlock: 4e7 },
+];
+// Štýly fasád pre každý typ budovy (každý štýl = vlastná textúra) – okrem farby steny sa líšia aj usporiadaním okien
+const GLASS_TINT = { blue: ['#a9c3d6', '#4f7189'], teal: ['#a9d0c9', '#437a72'], grey: ['#cdd5dc', '#6b7884'], bronze: ['#dccaa4', '#7d6445'], deep: ['#8aa3c0', '#34506f'] };
+const STYLES = [
+  [{ k: 'classic' }, { k: 'shutters', sh: '#3f6a5a' }, { k: 'shutters', sh: '#8a3b2e' }],
+  [{ k: 'classic' }, { k: 'shutters', sh: '#35507a' }, { k: 'shutters', sh: '#6b4a35' }],
+  [{ k: 'grid' }, { k: 'balcony' }, { k: 'stripes' }],
+  [{ k: 'curtain', c: 'blue' }, { k: 'ribbon', c: 'grey', sp: '#bdb7aa' }, { k: 'piers', c: 'teal' }],
+  [{ k: 'curtain', c: 'blue' }, { k: 'curtain', c: 'bronze' }, { k: 'ribbon', c: 'teal', sp: '#8f979f' }, { k: 'piers', c: 'deep' }],
+  [{ k: 'curtain', c: 'deep' }, { k: 'piers', c: 'grey' }, { k: 'ribbon', c: 'blue', sp: '#d7d2c6' }, { k: 'curtain', c: 'teal' }],
 ];
 const WALLS = [
-  ['#e8d9c5', '#d9a38a', '#c9d6b0', '#b7cbe0', '#e7c9c9', '#f0e6b8'],
-  ['#e1cfb6', '#c9b79c', '#d7b8a8', '#bcd0c0', '#e6dcb0', '#c4cde0'],
-  ['#c9c6bf', '#b8bdc2', '#d2c3a8', '#a9b3a0'],
-  ['#8fb4d4', '#9cc3c9', '#7d98b8', '#b0b8c2'],
-  ['#7aa2c8', '#6f8fae', '#a1b6c9', '#5f7f9c'],
-  ['#6fa0d8', '#8fb6d0', '#7e9bd0', '#a4c4d8'],
+  ['#e8d9c5', '#d9a38a', '#c9d6b0', '#b7cbe0', '#e7c9c9', '#f0e6b8', '#d8c0a0', '#f2f2ee', '#a9c4a0', '#e6b98f'],
+  ['#e1cfb6', '#c9b79c', '#d7b8a8', '#bcd0c0', '#e6dcb0', '#c4cde0', '#f0ece0', '#cfa89a', '#b4c3d4', '#d9d0a0'],
+  ['#c9c6bf', '#dccaa6', '#e6cfae', '#b9c6a8', '#c8d4dc', '#d8b8a4', '#ebe4d0', '#a8b0a0', '#cfa6a0', '#9fb4c8'],
+  ['#ffffff', '#f4f0e6', '#e8eef5', '#f2e9e0', '#e3e9e3'],
+  ['#ffffff', '#f1ede4', '#e6edf4', '#f0e8de', '#e1e7e1'],
+  ['#ffffff', '#f3efe6', '#e8eef4', '#efe8df', '#e4eaea'],
 ];
 const ROOFS = ['#8a3b2e', '#6b4a3a', '#4d5a66', '#a05a3a', '#7a2f2f'];
 const unlockedTier = () => { let t = 0; TIERS.forEach((d, i) => { if (S.total >= d.unlock) t = i; }); return t; };
@@ -467,36 +477,50 @@ makeGround();
 /* ================================================================
    Budovy
    ================================================================ */
-function windowTexture(def, tier) {
-  const cw = tier >= 3 ? 28 : 22, ch = tier >= 3 ? 28 : 22, W = def.cols * cw, H = def.rows * ch;
+function windowTexture(def, tier, st) {
+  const glass = tier >= 3, cw = glass ? 28 : 22, ch = glass ? 28 : 22, W = def.cols * cw, H = def.rows * ch;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const g = c.getContext('2d'), glass = tier >= 3, lerpHex = (a, b, k) => '#' + [1, 3, 5].map(i => Math.round(parseInt(a.substr(i, 2), 16) * (1 - k) + parseInt(b.substr(i, 2), 16) * k).toString(16).padStart(2, '0')).join('');
+  const g = c.getContext('2d'), mix = (a, b, k) => '#' + [1, 3, 5].map(i => Math.round(parseInt(a.substr(i, 2), 16) * (1 - k) + parseInt(b.substr(i, 2), 16) * k).toString(16).padStart(2, '0')).join('');
+  const pane = (x, y, w, h, tint, bright) => {            // jedna sklenená tabuľa: prechod odrazu oblohy, rôzna jasnosť, odlesky
+    const lighter = Math.random() < .09, top = mix(tint[0], '#dbe8f1', lighter ? .5 : 0), bot = mix(tint[1], '#8fb0c6', lighter ? .4 : 0), gr = g.createLinearGradient(0, y, 0, y + h);
+    gr.addColorStop(0, top); gr.addColorStop(1, bot);
+    g.globalAlpha = Math.min(1, bright); g.fillStyle = gr; g.fillRect(x, y, w, h); g.globalAlpha = 1;
+    g.fillStyle = 'rgba(255,255,255,.2)'; g.fillRect(x, y, w, 1.5); g.fillStyle = 'rgba(20,40,60,.14)'; g.fillRect(x, y + h - 2, w, 2);
+    if (Math.random() < .12) { g.fillStyle = 'rgba(255,255,255,.13)'; g.beginPath(); g.moveTo(x + w * .15, y + h); g.lineTo(x + w * .55, y); g.lineTo(x + w * .75, y); g.lineTo(x + w * .35, y + h); g.fill(); }
+  };
+  const rnd = () => .84 + Math.random() * .26;
   if (glass) {
-    // prirodzená presklená fasáda: svetlý rám/pásy medzi poschodiami + tabule s prechodom (hore odraz oblohy, dole tmavšie) a rôznou jasnosťou
-    g.fillStyle = '#d2d8de'; g.fillRect(0, 0, W, H);
-    for (let r = 0; r < def.rows; r++) for (let k = 0; k < def.cols; k++) {
-      const x = k * cw + 2, y = r * ch + 1, w = cw - 4, h = ch - 6;               // dole zostane pás medzi poschodiami
-      const f = .84 + Math.random() * .26, lighter = Math.random() < .09, row = r / def.rows;
-      const top = lerpHex('#a9c3d6', '#dbe8f1', lighter ? .55 : 0), bot = lerpHex('#4f7189', '#8fb0c6', lighter ? .45 : 0);
-      const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, top); gr.addColorStop(1, bot);
-      g.globalAlpha = Math.min(1, f); g.fillStyle = gr; g.fillRect(x, y, w, h); g.globalAlpha = 1;
-      g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x, y, w, 1.5);              // odlesk na hrane
-      g.fillStyle = 'rgba(20,40,60,.14)'; g.fillRect(x, y + h - 2, w, 2);
-      if (Math.random() < .12) { g.fillStyle = 'rgba(255,255,255,.14)'; g.beginPath(); g.moveTo(x + w * .15, y + h); g.lineTo(x + w * .55, y); g.lineTo(x + w * .75, y); g.lineTo(x + w * .35, y + h); g.fill(); }   // šikmý odraz
+    const tint = GLASS_TINT[st.c];
+    if (st.k === 'curtain') {                                                      // celá presklená fasáda
+      g.fillStyle = '#d2d8de'; g.fillRect(0, 0, W, H);
+      for (let r = 0; r < def.rows; r++) for (let k = 0; k < def.cols; k++) pane(k * cw + 2, r * ch + 1, cw - 4, ch - 6, tint, rnd());
+      g.fillStyle = 'rgba(120,132,144,.55)'; for (let r = 0; r < def.rows; r++) g.fillRect(0, r * ch + ch - 5, W, 2);
+    } else if (st.k === 'ribbon') {                                                // súvislé pásy skla a plné parapety medzi poschodiami
+      g.fillStyle = st.sp; g.fillRect(0, 0, W, H);
+      for (let r = 0; r < def.rows; r++) {
+        const y = r * ch + 4, h = ch - 11;
+        for (let k = 0; k < def.cols; k++) pane(k * cw, y, cw, h, tint, rnd());
+        g.fillStyle = 'rgba(90,100,110,.55)'; for (let k = 0; k <= def.cols; k++) g.fillRect(k * cw - 1, y, 2, h);
+      }
+    } else {                                                                       // piers: úzke okná medzi svetlými piliermi
+      g.fillStyle = '#e0dbd0'; g.fillRect(0, 0, W, H);
+      for (let r = 0; r < def.rows; r++) for (let k = 0; k < def.cols; k++) { pane(k * cw + 8, r * ch + 3, cw - 16, ch - 8, tint, rnd()); g.fillStyle = 'rgba(0,0,0,.08)'; g.fillRect(k * cw + 6, r * ch + 3, 2, ch - 8); }
+      g.fillStyle = 'rgba(150,145,135,.5)'; for (let r = 0; r < def.rows; r++) g.fillRect(0, r * ch + ch - 3, W, 2);
     }
-    g.fillStyle = 'rgba(120,132,144,.55)';                                          // pásy medzi poschodiami (spandrel)
-    for (let r = 0; r < def.rows; r++) g.fillRect(0, r * ch + ch - 5, W, 2);
   } else {
     g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    if (st.k === 'stripes') { g.fillStyle = 'rgba(70,90,115,.17)'; for (let k = 0; k <= def.cols; k++) g.fillRect(k * cw - 3, 0, 6, H); }
     for (let r = 0; r < def.rows; r++) for (let k = 0; k < def.cols; k++) {
       const x = k * cw + 5, y = r * ch + 5, w = cw - 10, h = ch - 10;
-      if (tier <= 1 && r === 0 && k === 0) { g.fillStyle = '#6b4a35'; g.fillRect(x, y - 2, w, h + 4); continue; } // dvere
-      const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, '#6e86a0'); gr.addColorStop(1, '#475d77');
-      g.fillStyle = '#c9c5bb'; g.fillRect(x - 1.5, y - 1.5, w + 3, h + 3);          // rám okna
+      if (tier <= 1 && r === 0 && k === 0) { g.fillStyle = '#6b4a35'; g.fillRect(x, y - 2, w, h + 4); continue; }  // dvere
+      if (st.k === 'shutters') { g.fillStyle = st.sh; g.fillRect(x - 4, y - 1, 3, h + 2); g.fillRect(x + w + 1, y - 1, 3, h + 2); }
+      const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, '#9db4cb'); gr.addColorStop(1, '#6a85a3');
+      g.fillStyle = '#c9c5bb'; g.fillRect(x - 1.5, y - 1.5, w + 3, h + 3);        // rám okna
       g.fillStyle = gr; g.fillRect(x, y, w, h);
       g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x, y, w, 2);
-      g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(x + w / 2 - .5, y, 1, h);          // stredový stĺpik
-      g.fillStyle = '#b9b4a8'; g.fillRect(x - 2, y + h + 1.5, w + 4, 1.5);           // parapet
+      g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(x + w / 2 - .5, y, 1, h);        // stredový stĺpik
+      g.fillStyle = '#b9b4a8'; g.fillRect(x - 2, y + h + 1.5, w + 4, 1.5);         // parapet
+      if (st.k === 'balcony') { g.fillStyle = 'rgba(70,66,60,.55)'; g.fillRect(k * cw + 1, r * ch + ch - 6, cw - 2, 4); g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(k * cw + 1, r * ch + ch - 7, cw - 2, 1); }   // balkón
     }
   }
   const t = bakeTexture(c); t.anisotropy = 4;
@@ -505,12 +529,12 @@ function windowTexture(def, tier) {
 const roofMats = {};
 const roofMat = hex => roofMats[hex] || (roofMats[hex] = new THREE.MeshStandardMaterial({ color: hex, roughness: .9, vertexColors: true }));
 const wallMats = {};
-const winTex = TIERS.map((d, i) => windowTexture(d, i));
-function wallMat(tier, hex) {
-  const k = tier + hex;
+const winTex = TIERS.map((d, i) => STYLES[i].map(st => windowTexture(d, i, st)));
+function wallMat(tier, st, hex) {
+  const k = tier + ':' + st + ':' + hex;
   if (wallMats[k]) return wallMats[k];
-  const col = new THREE.Color(hex); if (tier >= 3) col.lerp(new THREE.Color('#ffffff'), .62);     // sklenená fasáda: farba je len jemný odtieň, nie tmavá výplň
-  return wallMats[k] = new THREE.MeshStandardMaterial({ map: winTex[tier], vertexColors: true, color: col, roughness: tier >= 3 ? .3 : .85, metalness: tier >= 3 ? .12 : 0, envMapIntensity: tier >= 3 ? 1.5 : 1 });
+  const col = new THREE.Color(hex);
+  return wallMats[k] = new THREE.MeshStandardMaterial({ map: winTex[tier][st], vertexColors: true, color: col, roughness: tier >= 3 ? .3 : .85, metalness: tier >= 3 ? .12 : 0, envMapIntensity: tier >= 3 ? 1.5 : 1 });
 }
 const bodyGeo = TIERS.map(d => {   // zapečené "ambient occlusion" pri zemi a mierne zosvetlenie smerom hore (zadarmo za behu)
   const g = new THREE.BoxGeometry(d.w, d.h, d.d, 1, Math.ceil(d.h / 1.2), 1).translate(0, d.h / 2, 0);
@@ -651,10 +675,11 @@ function makeBuilding(lot, instant) {
   const wallHex = pick(WALLS[tier]);
   const g = new THREE.Group();
   let roofHex = pick(ROOFS);
-  const v = pick(VARIANTS[tier]), mesh = new THREE.Mesh(v.geo, [wallMat(tier, wallHex), roofMat(def.roof === 'pitch' ? roofHex : '#ffffff')]);
+  const v = pick(VARIANTS[tier]), sty = randi(0, STYLES[tier].length - 1), roofTone = def.roof === 'pitch' ? roofHex : pick(['#ffffff', '#ffffff', '#e6dccc', '#cfd8e0', '#d6dccf', '#bfb6a8']);
+  const mesh = new THREE.Mesh(v.geo, [wallMat(tier, sty, wallHex), roofMat(roofTone)]);
   mesh.castShadow = mesh.receiveShadow = true;
   g.add(mesh);
-  const tall = tier >= 3, sx = tall ? rand(.8, 1.15) : rand(.88, 1.12), sz = tall ? rand(.8, 1.15) : sx, sy = tall ? rand(.68, 1.2) : tier === 2 ? rand(.8, 1.2) : rand(.92, 1.12);   // vyššie budovy sa líšia viac
+  const tall = tier >= 3, sx = tall ? rand(.8, 1.15) : rand(.88, 1.12), sz = tall ? rand(.8, 1.15) : sx, sy = tall ? rand(.74, 1.1) : tier === 2 ? rand(.8, 1.2) : rand(.92, 1.12);   // vyššie budovy sa líšia viac
   g.userData.base = new THREE.Vector3(sx, sy, sz);
   g.position.set(lot.x, 0, lot.z);
   g.rotation.order = 'XZY'; g.rotation.y = lot.yaw + (Math.random() < .5 ? 0 : Math.PI);   // tilt okolo svetových osí
@@ -2178,7 +2203,7 @@ if (firstRun) {
 
 let frameNo = 0;
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { sparks, sp, puffs, fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { sparks, sp, puffs, fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, get H() { return H; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;
