@@ -557,9 +557,9 @@ function bridgeGeo(len, wid) {
   return mergeGeometries(parts);
 }
 const LM_DEF = {
-  tower: { name: 'tower', w: 3.4, d: 3.4, h: 10, hp: 260, val: 220, csz: .4, wall: '#cfd6dd', roof: '#6b6f76' },
-  windmill: { name: 'windmill', w: 3.4, d: 3.4, h: 8.5, hp: 200, val: 170, csz: .35, wall: '#e0dac9', roof: '#8a3b2e' },
-  barn: { name: 'barn', w: 8.2, d: 5.6, h: 5.4, hp: 340, val: 260, csz: .55, wall: '#a23b2e', roof: '#4d5a66' },
+  tower: { name: 'tower', w: 3.4, d: 3.4, h: 10, hp: 70, val: 90, csz: .4, wall: '#cfd6dd', roof: '#6b6f76' },
+  windmill: { name: 'windmill', w: 3.4, d: 3.4, h: 8.5, hp: 85, val: 100, csz: .35, wall: '#e0dac9', roof: '#8a3b2e' },
+  barn: { name: 'barn', w: 8.2, d: 5.6, h: 5.4, hp: 140, val: 130, csz: .55, wall: '#a23b2e', roof: '#4d5a66' },
 };
 const lmMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), lmGeo = {};
 function lmGeometry(model) {
@@ -776,6 +776,53 @@ const puffs = new Particles(PF, 7);
 const pf = { life: new Float32Array(PF), max: new Float32Array(PF), vx: new Float32Array(PF), vy: new Float32Array(PF), vz: new Float32Array(PF), s0: new Float32Array(PF), s1: new Float32Array(PF), a0: new Float32Array(PF) };
 let pn = 0;
 const fires = [];
+// Elektrické iskrenie: po niektorých zničených budovách krátko preskakujú oblúky (reťaz svietivých bodov, aditívne miešanie) + lietajúce iskry
+const SPN = 520, sp = { pos: new Float32Array(SPN * 3), size: new Float32Array(SPN), alpha: new Float32Array(SPN), col: new Float32Array(SPN * 3), vel: new Float32Array(SPN * 3),
+  ttl: new Float32Array(SPN), max: new Float32Array(SPN), grav: new Float32Array(SPN) };
+let spI = 0;
+const spGeo = new THREE.BufferGeometry();
+for (const [k, a, n] of [['position', sp.pos, 3], ['aSize', sp.size, 1], ['aAlpha', sp.alpha, 1], ['aColor', sp.col, 3]]) spGeo.setAttribute(k, new THREE.BufferAttribute(a, n).setUsage(THREE.DynamicDrawUsage));
+const spPoints = new THREE.Points(spGeo, new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uScale: pUniforms.uScale },
+  vertexShader: `attribute float aSize; attribute float aAlpha; attribute vec3 aColor; uniform float uScale; varying float vA; varying vec3 vC;
+    void main(){ vec4 mv=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*mv; gl_PointSize=min(max(aSize*uScale/max(-mv.z,0.1),2.0),90.0); vA=aAlpha; vC=aColor; }`,
+  fragmentShader: `varying float vA; varying vec3 vC;
+    void main(){ float d=length(gl_PointCoord-0.5)*2.0; float a=pow(clamp(1.0-d,0.0,1.0),1.7)*vA; if(!(a>=0.004)) discard; gl_FragColor=vec4(vC,a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+}));
+spPoints.frustumCulled = false; spPoints.renderOrder = 9; scene.add(spPoints);
+function spPoint(x, y, z, vx, vy, vz, size, ttl, r, g, b, grav) {
+  const i = spI; spI = (spI + 1) % SPN;
+  sp.pos[i * 3] = x; sp.pos[i * 3 + 1] = y; sp.pos[i * 3 + 2] = z; sp.vel[i * 3] = vx; sp.vel[i * 3 + 1] = vy; sp.vel[i * 3 + 2] = vz;
+  sp.size[i] = size; sp.ttl[i] = sp.max[i] = ttl; sp.col[i * 3] = r; sp.col[i * 3 + 1] = g; sp.col[i * 3 + 2] = b; sp.grav[i] = grav || 0;
+}
+function spawnArc(x, y, z) {                                      // jeden zubatý oblúk dĺžky ~1–2,5 m + záblesk a pár lietajúcich iskier
+  const a = rand(0, 6.3), len = rand(1.6, 3.6), dx = Math.cos(a), dz = Math.sin(a), n = 10, sx = x + rand(-.7, .7), sz = z + rand(-.7, .7), lift = rand(-.1, .7);
+  for (let i = 0; i <= n; i++) {
+    const f = i / n, j = Math.sin(f * 3.14) * .45, px = sx + dx * len * f - dz * rand(-j, j), pz = sz + dz * len * f + dx * rand(-j, j), py = y + Math.sin(f * 3.14) * lift + rand(-.12, .12), life = rand(.07, .13);
+    spPoint(px, py, pz, 0, 0, 0, .27, life, .9, .97, 1.4);          // jasné jadro
+    spPoint(px, py, pz, 0, 0, 0, .85, life, .3, .55, 1.3);          // modrastá žiara
+  }
+  spPoint(sx, y, sz, 0, 0, 0, 2.0, .12, .35, .55, 1.2);              // záblesk v mieste vzniku
+  for (let k = 0, m = randi(3, 6); k < m; k++) { const b = rand(0, 6.3), v = rand(1.5, 4); spPoint(sx, y + .2, sz, Math.cos(b) * v, rand(2, 5), Math.sin(b) * v, rand(.13, .2), rand(.35, .8), 1.4, rand(.75, .95), rand(.3, .5), 11); }
+  sparkSound();
+}
+const sparks = [];
+function updateSparks(dt) {
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const e = sparks[i]; e.t += dt; e.next -= dt;
+    if (e.t > e.life) { sparks.splice(i, 1); continue; }
+    if (e.next <= 0) { spawnArc(e.x, e.y, e.z); e.next = Math.random() < .35 ? .06 : rand(.14, .55); }   // občas dva oblúky tesne za sebou, inak nepravidelné pauzy
+  }
+  for (let i = 0; i < SPN; i++) {
+    if (sp.ttl[i] <= 0) { sp.alpha[i] = 0; continue; }
+    sp.ttl[i] -= dt;
+    if (sp.ttl[i] <= 0) { sp.alpha[i] = 0; sp.size[i] = 0; continue; }
+    sp.vel[i * 3 + 1] -= sp.grav[i] * dt;
+    sp.pos[i * 3] += sp.vel[i * 3] * dt; sp.pos[i * 3 + 1] = Math.max(.05, sp.pos[i * 3 + 1] + sp.vel[i * 3 + 1] * dt); sp.pos[i * 3 + 2] += sp.vel[i * 3 + 2] * dt;
+    sp.alpha[i] = Math.pow(sp.ttl[i] / sp.max[i], .6) * (sp.grav[i] ? 1 : .55 + .45 * Math.random());          // oblúky mierne blikajú
+  }
+  for (const k of ['position', 'aSize', 'aAlpha', 'aColor']) spGeo.attributes[k].needsUpdate = true;
+}
 const FIRE_T = 6, SMOKE_T = 10, FIRE_TINT = [1, .55, .12], SMOKE_TINT = [1, 1, 1];
 function updateFires(dt) {
   for (let i = fires.length - 1; i >= 0; i--) {
@@ -1285,6 +1332,8 @@ function tone(freq, dur, vol, delay, type) {
 }
 function buySound() { tone(660, .1, .09); tone(990, .14, .08, .07); }
 function questSound() { [523, 659, 784, 1047].forEach((f, i) => tone(f, .22, .1, i * .09)); }
+let lastSpark = 0;
+function sparkSound() { const n = performance.now(); if (n - lastSpark < 110) return; lastSpark = n; burst(5200, .05, .07, 3); }
 function thunderSound() { burst(260, .9, 2.4, .7); }
 // keď hru nevidno (minimalizovaná, iná karta, iná aplikácia), zvuk sa úplne pozastaví
 function audioFocus(on) { if (!AU.ctx) return; if (on) AU.ctx.resume(); else AU.ctx.suspend(); }
@@ -1393,6 +1442,11 @@ function destroyBuilding(b) {
   cam.shake = Math.min(1.2, cam.shake + .08 + b.tier * .1);
   crashSound(b.tier);
   S.destroyed++; if (b.lot.kind === 'bridge') S.bridges++;
+  if (b.lot.kind !== 'bridge' && sparks.length < 5 && Math.random() < .17) {            // občas po budove preskakujú iskry
+    sparks.push({ x: b.x, y: .4, z: b.z, t: 0, life: rand(1.2, 2.2), next: rand(.05, .3) });
+    if (Math.random() < .3) news(pick(t('sparkNews')));
+  }
+  if (b.lot.kind === 'bridge') { /* most nehorí */ }
   else if (fires.length < 8 && Math.random() < .22) {     // občas po budove ostane požiar
     fires.push({ x: b.x, z: b.z, t: 0, s: clamp(b.def.w * .45, .9, 2.2), fa: 0, sa: 0 });
     if (Math.random() < .3) news(pick(t('fire')));
@@ -1633,6 +1687,7 @@ function update(dt) {
   for (const b of buildings) if (b.blades && b.alive) b.blades.rotation.z += dt * (.5 + S.lv.power * .02);   // mlyn sa točí
   updateDebris(dt);
   updateFires(dt);
+  updateSparks(dt);
   updatePuffs(dt);
   updateSwirl(dt);
   updateFunnel(dt);
@@ -2101,7 +2156,7 @@ if (firstRun) {
 
 let frameNo = 0;
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { puffs, fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { sparks, sp, puffs, fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;
