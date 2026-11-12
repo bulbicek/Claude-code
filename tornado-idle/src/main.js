@@ -47,13 +47,13 @@ try {
 
 setLangCode(S.lang || (/^(sk|cs)/i.test(navigator.language || '') ? 'sk' : 'en'));
 
-const dpsOf = l => 8 * Math.pow(1.2, l);
+const dpsOf = l => 8 * Math.pow(1.195, l);
 const UPG = [
-  { id: 'power', icon: '💨', base: 12, g: 1.6, show: l => fmt(dpsOf(l)) + ' ' + t('dmg') },
-  { id: 'radius', icon: '🌪️', base: 25, g: 1.7, max: 150, show: l => (2 * radiusAt(l)).toFixed(1) + ' m' },
-  { id: 'speed', icon: '🧭', base: 40, g: 1.75, max: 30, show: l => speedAt(l).toFixed(1) + ' m/s' },
-  { id: 'storm', icon: '⚡', base: 300, g: 2.1, show: l => l === 0 ? t('off') : `${stormInterval(l).toFixed(1)} s · ×${stormCount(l)}` },
-  { id: 'value', icon: '💶', base: 90, g: 2.05, show: l => '×' + fmt(Math.pow(1.2, l)) },
+  { id: 'power', icon: '💨', base: 12, g: 1.62, show: l => fmt(dpsOf(l)) + ' ' + t('dmg') },
+  { id: 'radius', icon: '🌪️', base: 25, g: 1.73, max: 150, show: l => (2 * radiusAt(l)).toFixed(1) + ' m' },
+  { id: 'speed', icon: '🧭', base: 40, g: 1.78, max: 30, show: l => speedAt(l).toFixed(1) + ' m/s' },
+  { id: 'storm', icon: '⚡', base: 300, g: 2.14, show: l => l === 0 ? t('off') : `${stormInterval(l).toFixed(1)} s · ×${stormCount(l)}` },
+  { id: 'value', icon: '💶', base: 90, g: 2.08, show: l => '×' + fmt(Math.pow(VALUE_B, l)) },
   { id: 'offline', icon: '🌙', base: 400, g: 2.6, max: 15, show: l => Math.round(offlineEff(l) * 100) + ' %' },
 ];
 const stormInterval = l => 7 / (1 + 0.18 * (l - 1));
@@ -64,10 +64,10 @@ const costOf = (u, l) => Math.floor(u.base * Math.pow(u.g, l));
 const radiusAt = l => 2.6 + 19.4 * (1 - Math.pow(.98, l)), speedAt = l => Math.min(18, 4.2 * Math.pow(1.05, l));
 const radiusOf = () => radiusAt(S.lv.radius);
 const speedOf = () => speedAt(S.lv.speed);
-const PRESTIGE_BASE = 1e6, PRESTIGE_K = .15;
+const PRESTIGE_BASE = 1.2e6, PRESTIGE_K = .15, VALUE_B = 1.19;
 const prestigeMult = () => 1 + PRESTIGE_K * S.pts;
 const prestigeGain = () => Math.floor(Math.cbrt(S.total / PRESTIGE_BASE));
-const valueMult = () => Math.pow(1.2, S.lv.value) * prestigeMult();
+const valueMult = () => Math.pow(VALUE_B, S.lv.value) * prestigeMult();
 const windKmh = () => 85 + 16 * S.lv.power;
 function efOf(k) {
   if (k >= 450) return ['EF5+', '#ff4d6d'];
@@ -82,11 +82,11 @@ function efOf(k) {
 
 const TIERS = [
   { w: 2.4, d: 2.4, h: 1.9, hp: 14, val: 7, roof: 'pitch', rows: 1, cols: 2, unlock: 0 },
-  { w: 3.4, d: 3.0, h: 2.7, hp: 40, val: 24, roof: 'pitch', rows: 2, cols: 3, unlock: 150 },
-  { w: 4.6, d: 3.4, h: 6.6, hp: 160, val: 110, roof: 'flat', rows: 7, cols: 5, unlock: 2500 },
-  { w: 4.2, d: 4.2, h: 8.8, hp: 700, val: 560, roof: 'flat', rows: 9, cols: 6, unlock: 40000 },
-  { w: 3.8, d: 3.8, h: 16, hp: 3600, val: 3200, roof: 'flat', rows: 16, cols: 5, unlock: 1e6 },
-  { w: 4.4, d: 4.4, h: 25.6, hp: 20000, val: 20000, roof: 'flat', rows: 26, cols: 6, unlock: 3e7 },
+  { w: 3.4, d: 3.0, h: 2.7, hp: 40, val: 24, roof: 'pitch', rows: 2, cols: 3, unlock: 180 },
+  { w: 4.6, d: 3.4, h: 6.6, hp: 160, val: 110, roof: 'flat', rows: 7, cols: 5, unlock: 3000 },
+  { w: 4.2, d: 4.2, h: 8.8, hp: 700, val: 560, roof: 'flat', rows: 9, cols: 6, unlock: 50000 },
+  { w: 3.8, d: 3.8, h: 16, hp: 3600, val: 3200, roof: 'flat', rows: 16, cols: 5, unlock: 1.3e6 },
+  { w: 4.4, d: 4.4, h: 25.6, hp: 20000, val: 20000, roof: 'flat', rows: 26, cols: 6, unlock: 4e7 },
 ];
 const WALLS = [
   ['#e8d9c5', '#d9a38a', '#c9d6b0', '#b7cbe0', '#e7c9c9', '#f0e6b8'],
@@ -98,7 +98,7 @@ const WALLS = [
 ];
 const ROOFS = ['#8a3b2e', '#6b4a3a', '#4d5a66', '#a05a3a', '#7a2f2f'];
 const unlockedTier = () => { let t = 0; TIERS.forEach((d, i) => { if (S.total >= d.unlock) t = i; }); return t; };
-const megaScale = () => S.total > 3e8 ? Math.pow(2, Math.floor(Math.log10(S.total / 3e7))) : 1;
+const megaScale = () => S.total > 4e8 ? Math.pow(2, Math.floor(Math.log10(S.total / 4e7))) : 1;
 
 /* ================================================================
    Renderer, scéna, kamera
@@ -503,7 +503,15 @@ const VARIANTS = TIERS.map((d, t) => {
   const B = (w, h, dd, x, y, z, col) => paintGeo(new THREE.BoxGeometry(w, h, dd).translate(x, y, z), col || '#ffffff');
   const mk = (walls, roofs, top) => ({ geo: mergeGeometries([mergeGeometries(walls), mergeGeometries(roofs)], true), top });
   const body = bodyGeo[t], H0 = d.h;
-  if (d.roof === 'pitch') { const hh = t ? 1.6 : 1.2; return [mk([body], [paintGeo(pyr(d, hh), '#ffffff'), B(.28, .7, .28, d.w * .22, H0 + .95, d.d * .12)], hh)]; }
+  if (d.roof === 'pitch') {
+    const hh = t ? 1.6 : 1.2, hip = (w, dd, h, x, y, z) => { const g = new THREE.ConeGeometry(1, h, 4, 1).rotateY(Math.PI / 4); g.scale(w / 2 / .7071 * 1.12, 1, dd / 2 / .7071 * 1.12); g.translate(x, y + h / 2, z); return paintGeo(g, '#ffffff'); };
+    const flat = '#d8d2c4', ch = (x, z, y0) => B(.28, .7, .28, x, y0 + .35, z, '#ffffff');
+    return [
+      mk([body], [paintGeo(pyr(d, hh), '#ffffff'), B(.28, .7, .28, d.w * .22, H0 + .95, d.d * .12)], hh),                                                       // klasický domček
+      mk([body, B(d.w * .56, H0 * .46, .6, 0, H0 * .23, d.d / 2 + .3)], [hip(d.w, d.d, hh * 1.25, 0, H0, 0), B(d.w * .68, .1, .86, 0, H0 * .46 + .05, d.d / 2 + .38, flat), ch(-d.w * .25, -d.d * .15, H0 + .35)], hh * 1.25),   // s verandou
+      mk([body, B(d.w * .52, H0 * .72, d.d * .72, d.w / 2 + d.w * .22, H0 * .36, 0)], [hip(d.w, d.d, hh * 1.4, 0, H0, 0), hip(d.w * .6, d.d * .84, hh * .55, d.w / 2 + d.w * .22, H0 * .72, 0), ch(-d.w * .28, d.d * .1, H0 + .3)], hh * 1.4),  // s prístavbou (garáž)
+    ];
+  }
   const slab = () => B(d.w * 1.04, .22, d.d * 1.04, 0, H0 + .11, 0, '#4b5057');
   const ac = () => [B(d.w * .22, .35, d.d * .22, -d.w * .25, H0 + .4, d.d * .22, '#6a7078'), B(d.w * .16, .28, d.d * .3, d.w * .26, H0 + .36, -d.d * .2, '#6a7078')];
   const step = (k, hh, y0) => B(d.w * k, hh, d.d * k, 0, H0 + .22 + (y0 || 0) + hh / 2, 0);                        // nadstavba (steny)
@@ -800,7 +808,8 @@ function puff(x, y, z, vx, vy, vz, s0, s1, life, a0, shade, tint) {
    Tornádo – lievik, mraky, dážď
    ================================================================ */
 const T = { x: 0, z: 0, vx: 0, vz: 0 };
-let R = radiusOf(), H = 14 + R * 4;
+const H_SCALE = 1.2;                              // výška lievika (×1,2 oproti pôvodnej)
+let R = radiusOf(), H = (14 + R * 4) * H_SCALE;
 // Tvar lievika sa plynule mení: 0 = lano · .33 = „komín" (stovepipe) · .66 = kužeľ · 1 = široký klin (wedge).
 // Závisí od sily vetra, v čase mierne kolíše a občas sa tornádo „vylanuje" (zúži a skrúti) a opäť naberie silu.
 const SHAPES = [   // [m, polomer pri zemi (×R, +c), polomer hore (×R, +c), exponent profilu, výška ×]
@@ -823,7 +832,7 @@ function updateShape(dt) {
   if (boost.t > 0) target = 1;
   SH.m += (clamp(target, 0, 1) - SH.m) * (1 - Math.exp(-dt * (boost.t > 0 ? .7 : .14)));   // tvar sa mení pozvoľna (desiatky sekúnd)
   applyShape();
-  H = (14 + R * 4) * SH.hf;
+  H = (14 + R * 4) * SH.hf * H_SCALE;
 }
 const rb = () => SH.rbv, rtop = () => SH.rtv;
 const funnelR = t => SH.rbv + (SH.rtv - SH.rbv) * Math.pow(t, SH.ex) + SH.rtv * .5 * Math.pow(smooth(.78, 1, t), 2);   // na vrchu sa rozlieva do oblaku
