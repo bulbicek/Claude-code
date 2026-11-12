@@ -646,7 +646,7 @@ function makeLandmark(lot, instant) {                         // pevná stavba: 
   const b = { lot, tier: 2, def, x: lot.x, z: lot.z, group: g, hp, max: hp, value: def.val * rand(.9, 1.1), alive: true, grow: instant ? 1 : 0, shake: 0, acc: 0, emitted: 0,
     chunks: 26, r: Math.max(def.w, def.d) / 2, h: def.h, wallHex: def.wall, roofHex: def.roof, lx: 0, lz: 0, earned: 0, glass: false, sy: 1, settled: false, blades };
   g.scale.setScalar(b.grow || .001);
-  lot.b = b; buildings.push(b);
+  b.zone = lot.zone; lot.b = b; buildings.push(b);
   return b;
 }
 function makeBridge(lot, instant) {                 // most je „budova": má životy, hodnotu, dorastá a dá sa zničiť
@@ -664,7 +664,7 @@ function makeBridge(lot, instant) {                 // most je „budova": má �
   const b = { lot, tier: 3, def, x: lot.x, z: lot.z, group: g, hp, max: hp, value: def.val * rand(.9, 1.1), alive: true, grow: instant ? 1 : 0, shake: 0, acc: 0, emitted: 0,
     chunks: 30, r: Math.max(lot.len, lot.wid) / 2, h: .9, wallHex: '#8e9094', roofHex: '#d4d6da', lx: 0, lz: 0, earned: 0, glass: false, sy: 1, settled: false };
   g.scale.setScalar(b.grow || .001);
-  lot.b = b; buildings.push(b);
+  b.zone = lot.zone; lot.b = b; buildings.push(b);
   return b;
 }
 function makeBuilding(lot, instant) {
@@ -695,17 +695,33 @@ function makeBuilding(lot, instant) {
     glass: tier >= 3, sy, settled: false,
   };
   g.scale.set(b.grow * sx, b.grow * sy, b.grow * sz);
-  lot.b = b; buildings.push(b);
+  b.zone = lot.zone; lot.b = b; buildings.push(b);
   return b;
 }
 
+// Zóny mesta pre „Predpoveď trasy“: Centrum, Predmestie, Pri rieke, Vidiek
+const ZONES = { downtown: { id: 'downtown', icon: '🏙️', lots: [] }, suburb: { id: 'suburb', icon: '🏘️', lots: [] }, river: { id: 'river', icon: '🌉', lots: [] }, country: { id: 'country', icon: '🌾', lots: [] } };
+function zoneOfLot(l) {
+  if (l.kind === 'bridge') return 'river';
+  if (l.kind === 'landmark' && l.model !== 'tower') return 'country';
+  if (distRiver(l.x, l.z) < RIVER_HALF + 13) return 'river';
+  return l.c > .6 ? 'downtown' : 'suburb';
+}
+function finishZones() {
+  for (const z of Object.values(ZONES)) {
+    const n = z.lots.length || 1; z.x = z.lots.reduce((a, l) => a + l.x, 0) / n; z.z = z.lots.reduce((a, l) => a + l.z, 0) / n;
+    const d = z.lots.map(l => Math.hypot(l.x - z.x, l.z - z.z)).sort((a, b) => a - b); z.r = clamp(d[Math.floor(d.length * .75)] || 10, 10, 42);
+  }
+}
 function initCity() {
   for (const sp of LOT_SPECS) {
     const lot = Object.assign({ b: null, timer: 0, rubble: null }, sp);
+    lot.zone = zoneOfLot(lot); ZONES[lot.zone].lots.push(lot);
     lots.push(lot);
     if (lot.kind === 'bridge') BRIDGES.find(br => br.x === lot.x && br.z === lot.z).lotRef = lot;
     if (!lot.park) makeBuilding(lot, true);
   }
+  finishZones();
 }
 
 /* ---- stromy (instancing) ---- */
@@ -1507,7 +1523,8 @@ function destroyBuilding(b) {
 }
 function hurt(b, dmg) {
   dmg = Math.min(dmg, b.hp);
-  const f = dmg / b.max, e = b.value * valueMult() * f;
+  const f = dmg / b.max, e = b.value * valueMult() * f * routeMult(b);
+  if (routeOn() && b.zone === route.zone) route.gain += e;
   b.hp -= dmg; b.earned += e; earn(e); b.shake = 1;
   b.acc += f * b.chunks * 1.1;
   while (b.acc >= 1 && b.emitted < b.chunks) { b.acc -= 1; b.emitted++; emitChunks(b, 1, false); }
@@ -1592,9 +1609,10 @@ function scoreOf(b, dps) {
   return (b.value * (b.hp / b.max)) / (killT * .8 + d / speedOf() + .6);
 }
 function pickTarget() {
-  const dps = dpsOf(S.lv.power);
+  const dps = dpsOf(S.lv.power) * routePow();
   let best = null, bs = -1;
-  for (const b of buildings) { if (!b.alive || b.grow < 1) continue; const s = scoreOf(b, dps); if (s > bs) { bs = s; best = b; } }
+  const zoneOnly = routeOn() && zoneAlive(route.zone).n > 0;       // počas trasy sa autopilot drží vybranej zóny
+  for (const b of buildings) { if (!b.alive || b.grow < 1 || (zoneOnly && b.zone !== route.zone)) continue; const s = scoreOf(b, dps); if (s > bs) { bs = s; best = b; } }
   if (target && target.alive && best && best !== target) { if (scoreOf(target, dps) * 1.3 >= bs) best = target; }
   if (best !== target) { target = best; targetStamp = time; }
 }
@@ -1607,10 +1625,10 @@ function steer(dt) {
   if (!manual) {
     pickTimer -= dt;
     if (pickTimer <= 0 || !target || !target.alive) { pickTarget(); pickTimer = 1.2; }
-    if (target) { tx = target.x; tz = target.z; } else { tx = T.x + Math.cos(time) * 10; tz = T.z + Math.sin(time) * 10; }
+    if (target) { tx = target.x; tz = target.z; } else if (routeOn()) { tx = ZONES[route.zone].x; tz = ZONES[route.zone].z; } else { tx = T.x + Math.cos(time) * 10; tz = T.z + Math.sin(time) * 10; }
   }
   const dx = tx - T.x, dz = tz - T.z, d = Math.sqrt(dx * dx + dz * dz) || 1;
-  const sp = speedOf() * (boost.t > 0 ? 1.5 : 1) * (manual ? 1 : smooth(0, R * 1.6 + 1.5, d) * .85 + .15);
+  const sp = speedOf() * routeSpeed() * (boost.t > 0 ? 1.5 : 1) * (manual ? 1 : smooth(0, R * 1.6 + 1.5, d) * .85 + .15);
   const px = -dz / d, pz = dx / d, wob = Math.sin(time * .9) * .25 * Math.min(1, d / 10);
   const wantX = (dx / d + px * wob) * sp, wantZ = (dz / d + pz * wob) * sp;
   const k = 1 - Math.exp(-dt * 1.6);
@@ -1650,7 +1668,8 @@ function update(dt) {
   }
   if (boost.cd > 0) boost.cd -= dt;
   if (boost.t > 0) boost.t -= dt;
-  const boosted = boost.t > 0, dps = dpsOf(S.lv.power) * (boosted ? 3 : 1);
+  const boosted = boost.t > 0, dps = dpsOf(S.lv.power) * (boosted ? 3 : 1) * routePow();
+  updateRoute(dt);
   updateTrail(dt);
 
   // škody na budovách
@@ -1950,6 +1969,48 @@ function askPrestige() {
     newRun(); closeModal(); news(t('prestigeDone'), true);
   };
 }
+// Predpoveď trasy: každú minútu si hráč môže vybrať zónu; tornádo tam zamieri a škody v nej sa násobia
+const ROUTE_DUR = 45, ROUTE_COOLDOWN = 40, ROUTE_OFFER = 45;
+const ROUTE_KINDS = { safe: { mult: 1.3, speed: 1.3, pow: 1 }, bal: { mult: 1.7, speed: 1, pow: 1 }, risk: { mult: 2.4, speed: 1, pow: .65 } };
+const route = { state: 'cool', t: 25, zone: null, kind: null, opts: [], gain: 0, offerId: 0 };
+const routeOn = () => route.state === 'active';
+const routeMult = b => routeOn() && b.zone === route.zone ? ROUTE_KINDS[route.kind].mult : 1;
+const routePow = () => routeOn() ? ROUTE_KINDS[route.kind].pow : 1;
+const routeSpeed = () => routeOn() ? ROUTE_KINDS[route.kind].speed : 1;
+function zoneAlive(z) { let n = 0, tier = 0; for (const b of buildings) if (b.alive && b.zone === z) { n++; tier = Math.max(tier, b.tier); } return { n, tier }; }
+function offerRoute() {
+  const ok = Object.keys(ZONES).filter(z => zoneAlive(z).n >= 3);
+  if (ok.length < 2) { route.t = 15; return; }
+  const zs = ok.sort(() => Math.random() - .5).slice(0, 3), kinds = ['safe', 'bal', 'risk'].sort(() => Math.random() - .5);
+  route.opts = zs.map((z, i) => ({ zone: z, kind: kinds[i] })).sort((a, b) => ROUTE_KINDS[a.kind].mult - ROUTE_KINDS[b.kind].mult);
+  route.state = 'offer'; route.t = ROUTE_OFFER; route.offerId++;
+  news(t('routeOffer'), true);
+}
+function startRoute(i) {
+  const o = route.opts[i]; if (!o || route.state !== 'offer') return;
+  audioInit(); buySound();
+  route.state = 'active'; route.zone = o.zone; route.kind = o.kind; route.t = ROUTE_DUR; route.gain = 0; manual = null; marker.visible = false; target = null; pickTimer = 0;
+  news(t('routeStart', t('zone_' + o.zone), ROUTE_KINDS[o.kind].mult), true);
+}
+function updateRoute(dt) {
+  if (S.total < 200 && route.state === 'cool') return;
+  route.t -= dt;
+  if (route.state === 'cool' && route.t <= 0) offerRoute();
+  else if (route.state === 'offer' && route.t <= 0) { route.state = 'cool'; route.t = ROUTE_COOLDOWN; }
+  else if (route.state === 'active' && route.t <= 0) { news(t('routeEnd', fmt(route.gain)), true); questSound(); route.state = 'cool'; route.t = ROUTE_COOLDOWN; }
+}
+let routeKey = '';
+function updateRouteUI() {
+  const el = $('route'); if (!el) return;
+  const key = route.state === 'cool' ? 'cool' : route.state + route.offerId + route.zone + lang();
+  if (key !== routeKey) {
+    routeKey = key; el.classList.toggle('on', route.state !== 'cool');
+    if (route.state === 'offer') el.querySelector('.rbody').innerHTML = route.opts.map((o, i) => `<button class="rb ${o.kind}" data-i="${i}" title="${t('zone_' + o.zone)} · ×${ROUTE_KINDS[o.kind].mult} · ${t('kind_' + o.kind)}"><b>${ZONES[o.zone].icon}</b><span>${t('zone_' + o.zone)}</span><i>×${ROUTE_KINDS[o.kind].mult}</i><small>${t('kind_' + o.kind)}</small></button>`).join('');
+    else if (route.state === 'active') el.querySelector('.rbody').innerHTML = `<div class="ract"><b>${ZONES[route.zone].icon}</b> <span>${t('zone_' + route.zone)}</span> <i>×${ROUTE_KINDS[route.kind].mult}</i> <small>${t('kind_' + route.kind)}</small></div><div class="bar"><i id="rbar"></i></div>`;
+  }
+  setText($('rt'), route.state === 'cool' ? '' : Math.ceil(route.t) + ' s'); setText($('rlbl'), t('routeTitle'));
+  if (route.state === 'active') $('rbar').style.width = (route.t / ROUTE_DUR * 100) + '%';
+}
 // Úlohy: krátkodobé ciele s odmenou (cyklus šiestich typov, náročnosť postupne rastie)
 const QUESTS = [
   { goal: L => Math.round(5 * Math.pow(1.7, L)), val: () => S.destroyed },
@@ -2021,6 +2082,7 @@ function setLang(code) {
   flavorBag = []; tkq.length = 0;                      // staré správy v pôvodnom jazyku zahodiť
   refreshUI(); updateHUD(0); nextNews(); save();
 }
+$('route').addEventListener('click', e => { const b = e.target.closest('.rb'); if (b) startRoute(+b.dataset.i); });
 $('btn-lang').addEventListener('click', () => setLang(lang() === 'sk' ? 'en' : 'sk'));
 function setCine(on, user) { if (user) S.cine = on; document.body.classList.toggle('cine', on); $('btn-cine').style.opacity = on ? 1 : .45; }
 $('btn-cine').addEventListener('click', () => { setCine(!document.body.classList.contains('cine'), true); save(); });
@@ -2033,6 +2095,7 @@ $('btn-reset').addEventListener('click', () => {
 });
 // nový beh (prestíž / reset): vynuluje postup a postaví mesto odznova bez reloadu stránky
 function newRun() {
+  route.state = 'cool'; route.t = 25; routeKey = '';
   S.money = 0; S.total = 0; S.rate = 0; shownMoney = 0;
   for (const k in S.lv) S.lv[k] = 0;
   for (const b of buildings) cityGroup.remove(b.group);
@@ -2071,6 +2134,7 @@ let shownMoney = S.money;
 const boostEl = $('boost');
 boostEl.addEventListener('click', useBoost);
 function updateHUD(dt) {
+  updateRouteUI();
   boostEl.classList.toggle('on', boost.t > 0); boostEl.classList.toggle('cd', boost.t <= 0 && boost.cd > 0);
   boostEl.style.setProperty('--cd', (100 - clamp(boost.cd / BOOST_CD, 0, 1) * 100).toFixed(0) + '%');
   setText($('boost-t'), boost.t > 0 ? Math.ceil(boost.t) + ' s' : boost.cd > 0 ? Math.ceil(boost.cd) + ' s' : t('boost'));
@@ -2114,6 +2178,7 @@ function drawRadar() {
   rg.beginPath(); rg.moveTo(c, 0); rg.lineTo(c, W); rg.moveTo(0, c); rg.lineTo(W, c); rg.stroke();
   rg.fillStyle = 'rgba(90,150,90,.5)'; for (const t of trees) if (t.alive) rg.fillRect(X(t.x), Y(t.z), 2, 2);
   for (const b of buildings) { if (!b.alive) continue; rg.fillStyle = TIER_COL[b.tier]; const s = 3 + b.tier * .8; rg.fillRect(X(b.x) - s / 2, Y(b.z) - s / 2, s, s); }
+  if (routeOn()) { const z = ZONES[route.zone]; rg.strokeStyle = 'rgba(255,210,31,.85)'; rg.lineWidth = 2; rg.setLineDash([5, 4]); rg.beginPath(); rg.arc(X(z.x), Y(z.z), z.r * sc * (1 + .05 * Math.sin(time * 4)), 0, 7); rg.stroke(); rg.setLineDash([]); rg.fillStyle = 'rgba(255,210,31,.12)'; rg.fill(); }
   if (target && target.alive && !manual) { rg.strokeStyle = '#fff'; rg.setLineDash([4, 4]); rg.beginPath(); rg.arc(X(target.x), Y(target.z), 9, 0, 7); rg.stroke(); rg.setLineDash([]); }
   if (manual) { rg.strokeStyle = '#ffd21f'; rg.lineWidth = 2; rg.beginPath(); rg.arc(X(manual.x), Y(manual.z), 8, 0, 7); rg.stroke(); }
   // tornádo
@@ -2203,7 +2268,7 @@ if (firstRun) {
 
 let frameNo = 0;
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { sparks, sp, puffs, fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, get H() { return H; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { route, ZONES, startRoute, offerRoute, sparks, sp, puffs, fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, get H() { return H; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;

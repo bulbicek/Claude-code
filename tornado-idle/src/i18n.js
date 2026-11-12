@@ -23,6 +23,10 @@ const sk = {
   storm: ['Nad mestom sa strieda blesk za bleskom.', 'Meteorológovia: „Zachovajte pokoj, ak sa dá.“', 'Búrková aktivita je extrémna – blesky všade navôkol.'],
   tierNews: name => `Pozor: v zóne pribudli objekty typu „${name}“. Vyššia škoda, vyššie zisky!`,
   megaNews: 'Mesto sa rozrastá – nové budovy sú ešte vyššie a odolnejšie!',
+  routeTitle: 'Predpoveď trasy', routeOffer: 'Predpoveď: vyber, kam sa tornádo vydá. Vyššia odmena = vyššie riziko.',
+  zone_downtown: 'Centrum', zone_suburb: 'Predmestie', zone_river: 'Pri rieke', zone_country: 'Vidiek',
+  kind_safe: 'Priaznivý vietor', kind_bal: 'Vyvážená', kind_risk: 'Riziková',
+  routeStart: (z, m) => `Trasa: ${z}. Škody v zóne ×${m} na 45 sekúnd.`, routeEnd: g => `Trasa dokončená: +${g} € zo zvolenej zóny.`,
   prestigeName: 'Nový front',
   prestigeNeedNews: x => `Nový front: potrebuješ aspoň ${x} škody v tomto fronte.`,
   prestigeModal: (g, now, next) => `<div class="lbl">Prestíž</div><h1>NOVÝ <em>FRONT</em></h1>
@@ -89,6 +93,10 @@ const en = {
   storm: ['Lightning bolt after lightning bolt over the city.', 'Meteorologists: "Stay calm, if at all possible."', 'Storm activity is extreme – lightning everywhere.'],
   tierNews: name => `Alert: "${name}" structures have appeared in the zone. More damage, more profit!`,
   megaNews: 'The city is growing – new buildings are even taller and tougher!',
+  routeTitle: 'Route forecast', routeOffer: 'Forecast: choose where the tornado heads next. Higher reward = higher risk.',
+  zone_downtown: 'Downtown', zone_suburb: 'Suburbs', zone_river: 'Riverside', zone_country: 'Countryside',
+  kind_safe: 'Tailwind', kind_bal: 'Balanced', kind_risk: 'Risky',
+  routeStart: (z, m) => `Route: ${z}. Damage in the zone ×${m} for 45 seconds.`, routeEnd: g => `Route complete: +${g} € from the chosen zone.`,
   prestigeName: 'New front',
   prestigeNeedNews: x => `New front: you need at least ${x} damage in this front.`,
   prestigeModal: (g, now, next) => `<div class="lbl">Prestige</div><h1>NEW <em>FRONT</em></h1>
