@@ -340,6 +340,24 @@ function buildPlan() {
       }
     }
   }
+  // pevné stavby: dve vodárenské veže v meste, dva veterné mlyny a dve stodoly za mestom
+  const lmPlaced = [];
+  const lmFits = (x, z, r, inTown) => {
+    if (distRiver(x, z) < RIVER_HALF + (inTown ? 6 : 9) || clearance(x, z, -1) < (inTown ? r : r + 1) || inLake(x, z, 4)) return false;
+    if (inTown ? (Math.abs(x) > 52 || Math.abs(z) > 52) : (Math.abs(x) < HALF + 5 && Math.abs(z) < HALF + 5 || Math.abs(x) > WORLD - 9 || Math.abs(z) > WORLD - 9)) return false;
+    for (const q of placed) if ((q.x - x) * (q.x - x) + (q.z - z) * (q.z - z) < (inTown ? r + 1.6 : r + 3) * (inTown ? r + 1.6 : r + 3)) return false;
+    for (const q of lmPlaced) if (Math.hypot(q.x - x, q.z - z) < (inTown ? 20 : 24)) return false;
+    for (const pk of PARKS) if (Math.hypot(pk.x - x, pk.z - z) < pk.r + r + 1) return false;
+    return true;
+  };
+  for (const [model, count, r, inTown] of [['tower', 2, 2.5, true], ['windmill', 2, 5, false], ['barn', 2, 8, false]]) {
+    for (let k = 0, tries = 0; k < count && tries < 700; tries++) {
+      const x = pr_(-WORLD + 8, WORLD - 8), z = pr_(-WORLD + 8, WORLD - 8);
+      if (!lmFits(x, z, r, inTown)) continue;
+      lmPlaced.push({ x, z }); k++;
+      LOT_SPECS.push({ kind: 'landmark', model, x, z, yaw: pr_(0, 6.283), c: .5, park: false, r });
+    }
+  }
   for (const br of BRIDGES) LOT_SPECS.push({ kind: 'bridge', x: br.x, z: br.z, yaw: br.yaw, len: br.len, wid: br.wid, c: 1, park: false });
 }
 buildPlan();
@@ -380,9 +398,12 @@ function makeGround() {
   }
   // dvory pred domami
   for (const l of LOT_SPECS) {
+    if (l.kind === 'landmark') { g.fillStyle = l.model === 'barn' ? '#a99b6b' : '#8fa86a'; g.beginPath(); g.arc(px(l.x), px(l.z), (l.model === 'barn' ? 7 : 4.2) * ppu, 0, 7); g.fill(); continue; }
     if (l.kind === 'bridge') continue;
     g.save(); g.translate(px(l.x), px(l.z)); g.rotate(-l.yaw);
     g.fillStyle = pick(['#6f9c4f', '#78a556', '#668f49', '#82ad5c']); g.fillRect(-3.3 * ppu, -2.9 * ppu, 6.6 * ppu, 5.8 * ppu);
+    if (Math.random() < .5) for (let k = 0, nf = randi(5, 12); k < nf; k++) { g.fillStyle = pick(['#e0507a', '#f0d040', '#ffffff', '#c070e8', '#ff9a40']); g.beginPath(); g.arc(rand(-3, 3) * ppu, rand(-2.7, 2.7) * ppu, rand(.5, 1.3) * ppu * .18, 0, 7); g.fill(); }
+    if (Math.random() < .4) { g.fillStyle = 'rgba(80,60,40,.35)'; g.fillRect(rand(-2.8, 1) * ppu, rand(-2.4, 1.4) * ppu, 1.8 * ppu, .9 * ppu); }   // záhonček
     g.restore();
   }
   // cesty: chodník → obrubník → asfalt → značenie
@@ -527,6 +548,53 @@ function bridgeGeo(len, wid) {
   for (const k of [-.32, 0, .32]) add(new THREE.BoxGeometry(.9, 2.2, wid * .7).translate(k * len, -.85, 0), '#5c5f66');
   return mergeGeometries(parts);
 }
+const LM_DEF = {
+  tower: { name: 'tower', w: 3.4, d: 3.4, h: 10, hp: 260, val: 220, csz: .4, wall: '#cfd6dd', roof: '#6b6f76' },
+  windmill: { name: 'windmill', w: 3.4, d: 3.4, h: 8.5, hp: 200, val: 170, csz: .35, wall: '#e0dac9', roof: '#8a3b2e' },
+  barn: { name: 'barn', w: 8.2, d: 5.6, h: 5.4, hp: 340, val: 260, csz: .55, wall: '#a23b2e', roof: '#4d5a66' },
+};
+const lmMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), lmGeo = {};
+function lmGeometry(model) {
+  if (lmGeo[model]) return lmGeo[model];
+  const P = [], add = (g, col) => P.push(paintGeo(g, col)), B = (w, h, d, x, y, z, col) => add(new THREE.BoxGeometry(w, h, d).translate(x, y, z), col);
+  const C = (rt, rb, h, x, y, z, col, seg) => add(new THREE.CylinderGeometry(rt, rb, h, seg || 10).translate(x, y, z), col);
+  if (model === 'tower') {                                   // vodárenská veža: nohy, nádrž, kužeľová strecha
+    for (const [sx, sz] of [[-1, -1], [1, 1], [-1, 1], [1, -1]]) B(.2, 6.4, .2, sx * 1.1, 3.2, sz * 1.1, '#6b6f76');
+    B(2.6, .2, .2, 0, 3.5, 1.1, '#6b6f76'); B(2.6, .2, .2, 0, 3.5, -1.1, '#6b6f76'); B(.2, .2, 2.6, 1.1, 3.5, 0, '#6b6f76'); B(.2, .2, 2.6, -1.1, 3.5, 0, '#6b6f76');
+    C(1.6, 1.6, 2.6, 0, 7.7, 0, '#cfd6dd', 14); add(new THREE.ConeGeometry(1.75, 1.1, 14).translate(0, 9.55, 0), '#8a9099'); C(.12, .12, .5, 0, 10.3, 0, '#aab3bd', 6);
+  } else if (model === 'windmill') {                         // veterný mlyn (listy sú samostatný mesh)
+    C(.95, 1.5, 6.6, 0, 3.3, 0, '#e0dac9', 12); add(new THREE.ConeGeometry(1.25, 1.5, 12).translate(0, 7.3, 0), '#8a3b2e'); B(.9, 1.1, .1, 0, 1.0, 1.42, '#6b4a35');
+  } else {                                                   // stodola so silom
+    B(7.2, 3.6, 4.6, 0, 1.8, 0, '#a23b2e'); const roof = new THREE.ConeGeometry(1, 1.9, 4).rotateY(Math.PI / 4); roof.scale(7.6 / 2 / .7071, 1, 5 / 2 / .7071); roof.translate(0, 3.6 + .95, 0); add(roof, '#4d5a66');
+    B(2.2, 2.6, .12, 0, 1.3, 2.34, '#e8dcc0'); C(1.15, 1.15, 6.2, 4.6, 3.1, -1.2, '#c9ccd0', 14); add(new THREE.SphereGeometry(1.15, 14, 6, 0, 6.283, 0, 1.571).translate(4.6, 6.2, -1.2), '#9aa0a8');
+  }
+  return lmGeo[model] = mergeGeometries(P);
+}
+function makeLandmark(lot, instant) {                         // pevná stavba: životy, hodnota, dorastá, dá sa zničiť (ako most)
+  const m = [1, 1.5, 3, 8, 25, 80][unlockedTier()] * (unlockedTier() >= 4 ? megaScale() : 1), base = LM_DEF[lot.model];
+  const def = Object.assign({ roof: 'flat' }, base, { hp: base.hp * m, val: base.val * m });
+  const g = new THREE.Group(), mesh = new THREE.Mesh(lmGeometry(lot.model), lmMat);
+  mesh.castShadow = mesh.receiveShadow = true; g.add(mesh);
+  let blades = null;
+  if (lot.model === 'windmill') {
+    const bm = new THREE.Mesh(mergeGeometries([paintGeo(new THREE.BoxGeometry(.22, 5.2, .07), '#cfc6ae'), paintGeo(new THREE.BoxGeometry(5.2, .22, .07), '#cfc6ae'),
+      paintGeo(new THREE.BoxGeometry(.9, 2.2, .04).translate(.6, 1.5, .05), '#f2ede0'), paintGeo(new THREE.BoxGeometry(2.2, .9, .04).translate(-1.5, .6, .05), '#f2ede0'),
+      paintGeo(new THREE.BoxGeometry(.9, 2.2, .04).translate(-.6, -1.5, .05), '#f2ede0'), paintGeo(new THREE.BoxGeometry(2.2, .9, .04).translate(1.5, -.6, .05), '#f2ede0')]), lmMat);
+    bm.position.set(0, 6.9, 1.35); bm.castShadow = true; g.add(bm); blades = bm;
+  }
+  g.userData.base = new THREE.Vector3(1, 1, 1);
+  g.position.set(lot.x, 0, lot.z); g.rotation.order = 'XZY'; g.rotation.y = lot.yaw;
+  g.scale.setScalar(instant ? 1 : 0.001);
+  g.children.forEach(c => { if (c !== blades) { c.updateMatrix(); c.matrixAutoUpdate = false; } });
+  cityGroup.add(g);
+  if (lot.rubble) { cityGroup.remove(lot.rubble); lot.rubble = null; }
+  const hp = def.hp * rand(.9, 1.1);
+  const b = { lot, tier: 2, def, x: lot.x, z: lot.z, group: g, hp, max: hp, value: def.val * rand(.9, 1.1), alive: true, grow: instant ? 1 : 0, shake: 0, acc: 0, emitted: 0,
+    chunks: 26, r: Math.max(def.w, def.d) / 2, h: def.h, wallHex: def.wall, roofHex: def.roof, lx: 0, lz: 0, earned: 0, glass: false, sy: 1, settled: false, blades };
+  g.scale.setScalar(b.grow || .001);
+  lot.b = b; buildings.push(b);
+  return b;
+}
 function makeBridge(lot, instant) {                 // most je „budova": má životy, hodnotu, dorastá a dá sa zničiť
   const ut = unlockedTier(), m = [1, 1.5, 3, 8, 25, 80][ut] * (ut >= 4 ? megaScale() : 1);
   const def = { w: lot.len, d: lot.wid, h: .9, hp: 140 * m, val: 100 * m, roof: 'flat', csz: .45 };
@@ -547,6 +615,7 @@ function makeBridge(lot, instant) {                 // most je „budova": má �
 }
 function makeBuilding(lot, instant) {
   if (lot.kind === 'bridge') return makeBridge(lot, instant);
+  if (lot.kind === 'landmark') return makeLandmark(lot, instant);
   const tier = chooseTier(lot), def = TIERS[tier];
   const mega = tier >= 4 ? megaScale() : 1;
   const wallHex = pick(WALLS[tier]);
@@ -694,7 +763,7 @@ for (let i = 0; i < SW; i++) {   // 0 = mrak prachu, 1 = tmavé úlomky (silueta
   sw.rf[i] = c === 0 ? rand(.78, 1.08) : c === 1 ? rand(.7, 1.7) : rand(.9, 1.4);
 }
 // kúdoly
-const PF = 700;
+const PF = LOW ? 700 : 1300;
 const puffs = new Particles(PF, 7);
 const pf = { life: new Float32Array(PF), max: new Float32Array(PF), vx: new Float32Array(PF), vy: new Float32Array(PF), vz: new Float32Array(PF), s0: new Float32Array(PF), s1: new Float32Array(PF), a0: new Float32Array(PF) };
 let pn = 0;
@@ -925,6 +994,76 @@ const marker = new THREE.Mesh(new THREE.RingGeometry(.85, 1, 40).rotateX(-Math.P
 marker.position.y = .2; marker.visible = false; marker.renderOrder = 5; scene.add(marker);
 
 /* ================================================================
+   Dekorácie: pouličné lampy, kry, kamene (3 instancované meshe)
+   ================================================================ */
+const decor = [], DECOR = {};
+function mkDecor(name, geo, mat, max) {
+  const m = new THREE.InstancedMesh(geo, mat, max); m.castShadow = name !== 'bush'; m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m);
+  return DECOR[name] = { name, mesh: m, n: 0, max };
+}
+function initDecor() {
+  const lampG = mergeGeometries([paintGeo(new THREE.CylinderGeometry(.05, .07, 3.4, 5).translate(0, 1.7, 0), '#4a4e54'), paintGeo(new THREE.BoxGeometry(.95, .07, .07).translate(.42, 3.38, 0), '#4a4e54'),
+    paintGeo(new THREE.BoxGeometry(.34, .12, .22).translate(.88, 3.3, 0), '#fff2c0')]);
+  const bushG = paintGeo(new THREE.IcosahedronGeometry(.55, 0).scale(1.15, .8, 1.15).translate(0, .38, 0), '#ffffff');
+  const rockG = paintGeo(new THREE.DodecahedronGeometry(.6, 0).scale(1.25, .7, 1).translate(0, .18, 0), '#ffffff');
+  const lamps = mkDecor('lamp', lampG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .55, metalness: .3 }), 260);
+  const bushes = mkDecor('bush', bushG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }), 380);
+  const rocks = mkDecor('rock', rockG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, flatShading: true }), 150);
+  const BUSH_COL = ['#3f8a45', '#34773c', '#4f9a4c', '#2f6b3a', '#6aa04a'], FLOWER = ['#d94f7a', '#e8c43a', '#f0f0f0', '#b55adf'], ROCK_COL = ['#8b8f94', '#7a7e83', '#9a9a92', '#6f7378'];
+  const houses = lots.filter(l => l.kind === 'house');
+  const free = (x, z, pad) => !inLake(x, z, 1) && distRiver(x, z) > RIVER_HALF + 1.5 && clearance(x, z, -1) > pad;
+  const add = (D, x, z, s, rot, col, val) => {
+    if (D.n >= D.max) return; const it = { D, x, z, s, rot, alive: true, timer: 0, idx: D.n++, dirty: true, val };
+    D.mesh.setColorAt(it.idx, col); decor.push(it);
+  };
+  // lampy popri uliciach (na okraji chodníka, rameno smeruje k ceste)
+  for (const st of ROADS) for (let sdist = 7 + pr_(0, 6), side = 1; sdist < st.len - 5; sdist += 14 + pr_(-2, 4), side = -side) {
+    const i = Math.min(st.pts.length - 1, Math.round(sdist / STEP)), p = st.pts[i], nx = -st.tz[i] * side, nz = st.tx[i] * side, x = p.x + nx * (st.half + .7), z = p.z + nz * (st.half + .7);
+    if (distRiver(x, z) < RIVER_HALF + 4 || clearance(x, z, st.id) < .5) continue;
+    add(lamps, x, z, 1, Math.atan2(nz, -nx), _c.set('#ffffff'), 1.5);
+  }
+  // kry pri domoch (niektoré kvitnú)
+  for (const l of houses) {
+    if (Math.random() > .75) continue;
+    const cy = Math.cos(l.yaw), sy = Math.sin(l.yaw);
+    for (let k = 0; k < randi(1, 2); k++) {
+      const lx = (Math.random() < .5 ? -1 : 1) * rand(2.6, 3.1), lz = rand(-1.4, 1.4), x = l.x + lx * cy + lz * sy, z = l.z - lx * sy + lz * cy;
+      if (!free(x, z, .4) || decor.some(d => d.D === bushes && (d.x - x) * (d.x - x) + (d.z - z) * (d.z - z) < 1.2)) continue;
+      add(bushes, x, z, rand(.8, 1.4), rand(0, 6), _c.set(Math.random() < .2 ? pick(FLOWER) : pick(BUSH_COL)), .8);
+    }
+  }
+  for (const pk of PARKS) for (let k = 0; k < 18; k++) { const a = rand(0, 6.3), r = pk.r * rand(.35, .95); add(bushes, pk.x + Math.cos(a) * r, pk.z + Math.sin(a) * r, rand(.9, 1.6), rand(0, 6), _c.set(Math.random() < .3 ? pick(FLOWER) : pick(BUSH_COL)), .8); }
+  // kamene a trstina pri brehu rieky
+  for (let i = 3; i < riverPts.length; i += 4) {
+    const t = riverTan[i], side = Math.random() < .5 ? -1 : 1, off = RIVER_HALF + rand(2.2, 4.4), x = riverPts[i].x - t.z * side * off + rand(-1, 1), z = riverPts[i].z + t.x * side * off + rand(-1, 1);
+    if (Math.abs(x) > 95 || Math.abs(z) > 95 || clearance(x, z, -1) < 1.5) continue;
+    if (Math.random() < .55) add(rocks, x, z, rand(.6, 1.7), rand(0, 6), _c.set(pick(ROCK_COL)), 1.2); else add(bushes, x, z, rand(.7, 1.2), rand(0, 6), _c.set(pick(BUSH_COL)), .8);
+  }
+  for (let k = 0, tries = 0; k < 40 && tries < 400; tries++) { const x = rand(-WORLD, WORLD), z = rand(-WORLD, WORLD); if (!free(x, z, 2.5) || (Math.abs(x) < HALF && Math.abs(z) < HALF)) continue; add(rocks, x, z, rand(.7, 2), rand(0, 6), _c.set(pick(ROCK_COL)), 1.2); k++; }
+  for (const D of Object.values(DECOR)) D.mesh.instanceColor && (D.mesh.instanceColor.needsUpdate = true);
+  const z0 = new THREE.Matrix4().makeScale(0, 0, 0);
+  for (const D of Object.values(DECOR)) for (let i = D.n; i < D.max; i++) D.mesh.setMatrixAt(i, z0);
+}
+function updateDecor(dt) {
+  const rr = R * 1.05 + .5, rr2 = rr * rr;
+  for (const it of decor) {
+    if (it.alive) {
+      const dx = T.x - it.x, dz = T.z - it.z;
+      if (dx * dx + dz * dz < rr2) {                       // tornádo zbalí lampu, kroviny aj kamene
+        it.alive = false; it.timer = rand(16, 30); it.dirty = true; earn(it.val * valueMult());
+        const col = it.D.name === 'rock' ? '#7a7e83' : it.D.name === 'bush' ? '#3f8a45' : '#4a4e54';
+        for (let k = 0; k < 3; k++) spawnDebris(it.x + rand(-.3, .3), rand(.2, 1.2), it.z + rand(-.3, .3), rand(-2, 2), rand(1, 4), rand(-2, 2), it.D.name === 'lamp' ? .12 : .2, col);
+        puff(it.x, .5, it.z, rand(-1, 1), rand(.5, 1.5), rand(-1, 1), .8, 2.4, rand(.8, 1.4), .35, .6);
+      }
+    } else { it.timer -= dt; if (it.timer <= 0) { it.alive = true; it.dirty = true; } }
+    if (it.dirty) {
+      dummy.position.set(it.x, heightAt(it.x, it.z), it.z); dummy.rotation.set(0, it.rot, 0);
+      const k = it.alive ? it.s : 0; dummy.scale.set(k, k, k); dummy.updateMatrix(); it.D.mesh.setMatrixAt(it.idx, dummy.matrix); it.D.mesh.instanceMatrix.needsUpdate = true; it.dirty = false;
+    }
+  }
+}
+
+/* ================================================================
    Autá na cestách (1 instancovaný mesh) + mäkký tieň pod tornádom
    ================================================================ */
 const CAR_COLORS = ['#d9d9d9', '#c0392b', '#2c5fa8', '#e0b030', '#3a3a40', '#f0f0f0', '#3d8b5a', '#8e4ea0'];
@@ -994,6 +1133,7 @@ const riverMat = new THREE.ShaderMaterial({
     float bedH(float d){ return ${f3(BED)}*(1.0-smoothstep(${f3(BANK1)},${f3(BANK0)},d)); }
     float h21(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
     float vn(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h21(i),h21(i+vec2(1.,0.)),f.x),mix(h21(i+vec2(0.,1.)),h21(i+vec2(1.,1.)),f.x),f.y); }
+    float wh(vec2 q){ return vn(q)*.65+vn(q*2.1+3.7)*.35; }      // výška vody: šum bez periodicity
     vec3 skyAt(vec3 r){                                                           // odraz oblohy vrátane mrakov
       vec3 c=mix(uHor,uTop,pow(clamp(r.y,0.0,1.0),.55));
       #ifdef HQ
@@ -1010,10 +1150,17 @@ const riverMat = new THREE.ShaderMaterial({
       float depth=${f3(WATER_Y)}-bedH(d)*fade;                                   // hĺbka vody nad dnom
       if(depth<=0.0) discard;
       vec2 p=vW.xz; float t=uTime;
-      vec2 flow=vec2(0.0,t*.9);
-      vec2 g=vec2(cos(p.x*.9+p.y*.6+t*1.3)*.5+cos(p.x*2.1-p.y*1.7+t*2.1)*.3+cos(p.x*4.3+p.y*3.1-t*3.0)*.2+cos(p.x*8.7-p.y*6.1+t*4.3)*.12,
-                  cos(p.x*.7-p.y*.9+t*1.1)*.5+cos(p.y*2.3+p.x*1.5-t*1.9)*.3+cos(p.y*4.1-p.x*2.7+t*2.7)*.2+cos(p.y*7.9+p.x*5.3-t*3.9)*.12);
-      vec3 n=normalize(vec3(-g.x*.2,1.0,-g.y*.2));                             // vlnky
+      vec2 q=vec2((vUv.x-.5)*${f3(2 * (RIVER_HALF + 2.4))}*.3, vUv.y*5.0*.3);                      // súradnice pozdĺž toku: vlny sa ťahajú po prúde
+      vec2 qa=q+vec2(0.0,-t*.14), qb=q*vec2(1.7,1.3)+vec2(4.3,-t*.23), qc=q*vec2(3.1,2.2)+vec2(9.1,-t*.35);
+      float amp=.55+.9*vn(p*.07+vec2(t*.01,0.0));                                 // pomalé veľkoplošné zmeny sily vlnenia
+      vec2 g=vec2(0.0); float e=.14;
+      g.x=wh(qa+vec2(e,0.))-wh(qa-vec2(e,0.))+(wh(qb+vec2(e,0.))-wh(qb-vec2(e,0.)))*.6;
+      g.y=wh(qa+vec2(0.,e))-wh(qa-vec2(0.,e))+(wh(qb+vec2(0.,e))-wh(qb-vec2(0.,e)))*.6;
+      #ifdef HQ
+      g.x+=(wh(qc+vec2(e,0.))-wh(qc-vec2(e,0.)))*.3; g.y+=(wh(qc+vec2(0.,e))-wh(qc-vec2(0.,e)))*.3;
+      #endif
+      g*=amp*1.25;
+      vec3 n=normalize(vec3(-g.x,1.0,-g.y));
       vec3 v=normalize(cameraPosition-vW);
       float F=clamp(.07+.93*pow(1.0-max(dot(n,v),0.0),3.0),0.0,1.0);         // Fresnel: pri plytkom uhle zrkadlí
       vec3 r=reflect(-v,n); r.y=abs(r.y)+.02;
@@ -1211,17 +1358,28 @@ function emitChunks(b, n, burstMode) {
     spawnDebris(b.x + Math.cos(a) * r, y, b.z + Math.sin(a) * r, Math.cos(a) * out, rand(1, burstMode ? 8 : 4), Math.sin(a) * out, sz * rand(.6, 1.4), col);
   }
 }
+// Hustý oblak prachu naprieč celým objemom budovy + rázová vlna pri zemi: zakryje okamih, keď model zmizne
+function dustBurst(b) {
+  const bridge = b.lot.kind === 'bridge', w = bridge ? b.lot.len : b.def.w, dd = bridge ? b.lot.wid : b.def.d;
+  const hh = Math.min(b.h * (b.group.scale.y || 1), 16), yaw = b.lot.yaw || 0, cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const sc = clamp(Math.min(w, dd) * .45, 1.1, 3), n = Math.min(64, 22 + b.tier * 8 + (bridge ? 12 : 0));
+  for (let i = 0; i < n; i++) {
+    const u = rand(-.5, .5) * w, v = rand(-.5, .5) * dd, y = Math.pow(Math.random(), .8) * hh + .2, a = rand(0, 6.3), sp = rand(1, 4.5);
+    puff(b.x + cy * u + sy * v, y, b.z - sy * u + cy * v, Math.cos(a) * sp, rand(.4, 3.2), Math.sin(a) * sp, sc * rand(1.3, 2.1), sc * rand(3, 4.6), rand(1.9, 3.6), .62, rand(.5, .78));
+  }
+  for (let i = 0; i < 16; i++) {                                      // nízka rázová vlna
+    const a = i / 16 * 6.283 + rand(-.2, .2), sp = rand(4.5, 8);
+    puff(b.x + Math.cos(a) * w * .25, .35, b.z + Math.sin(a) * dd * .25, Math.cos(a) * sp, rand(.1, .8), Math.sin(a) * sp, sc * 1.6, sc * rand(4, 5.5), rand(1.5, 2.6), .5, rand(.55, .75));
+  }
+  for (let i = 0; i < 6; i++) puff(b.x + rand(-.4, .4) * w, rand(.5, 1.5), b.z + rand(-.4, .4) * dd, rand(-.5, .5), rand(2.5, 4), rand(-.5, .5), sc * 1.4, sc * 3, rand(2.8, 4.2), .42, rand(.3, .5));   // dlhšie stúpajúci dym
+}
 function destroyBuilding(b) {
   b.alive = false; b.hp = 0;
   const left = Math.max(0, b.chunks - b.emitted);
   emitChunks(b, left, true);
   // roof chunk
   if (b.tier <= 1) for (let i = 0; i < 4; i++) spawnDebris(b.x + rand(-1, 1), b.h, b.z + rand(-1, 1), rand(-3, 3), rand(3, 8), rand(-3, 3), b.def.w * .35, b.roofHex);
-  const n = 10 + b.tier * 4;
-  for (let i = 0; i < n; i++) {
-    const a = rand(0, 6.3), s = rand(1, 4 + b.tier);
-    puff(b.x + rand(-1, 1) * b.r, rand(.2, b.h * .6), b.z + rand(-1, 1) * b.r, Math.cos(a) * s, rand(.5, 3), Math.sin(a) * s, 1.5 + b.tier * .8, 4 + b.tier * 1.6, rand(1.4, 2.8), rand(.35, .6), rand(.45, .7));
-  }
+  dustBurst(b);
   floatText(b.x, b.h, b.z, '+' + fmt(b.earned), b.tier);
   cam.shake = Math.min(1.2, cam.shake + .08 + b.tier * .1);
   crashSound(b.tier);
@@ -1232,7 +1390,7 @@ function destroyBuilding(b) {
   }
   b.group.visible = false; cityGroup.remove(b.group);
   const lot = b.lot; lot.b = null; lot.timer = rand(16, 30);
-  const rb = new THREE.Mesh(rubbleGeo, rubbleMat); rb.position.set(lot.x, lot.kind === 'bridge' ? -1.2 : 0, lot.z); rb.scale.set(b.def.w * 1.05, 1, b.def.d * 1.05); rb.rotation.y = lot.yaw !== undefined ? lot.yaw : rand(0, 3); rb.castShadow = true; rb.receiveShadow = true;
+  const rb = new THREE.Mesh(rubbleGeo, rubbleMat); rb.position.set(lot.x, lot.kind === 'bridge' ? -1.2 : 0, lot.z); rb.scale.set(b.def.w * 1.05, .03, b.def.d * 1.05); rb.rotation.y = lot.yaw !== undefined ? lot.yaw : rand(0, 3); rb.castShadow = true; rb.receiveShadow = true;
   cityGroup.add(rb); lot.rubble = rb;
   const i = buildings.indexOf(b); if (i >= 0) buildings.splice(i, 1);
   if (S.destroyed % 50 === 0) news(t('milestone', S.destroyed));
@@ -1426,7 +1584,7 @@ function update(dt) {
   for (const lot of lots) {
     if (lot.b || lot.park) continue;
     lot.timer -= dt;
-    if (lot.rubble && lot.timer < 3) lot.rubble.scale.y = Math.max(.05, lot.timer / 3);
+    if (lot.rubble) { if (lot.timer < 3) lot.rubble.scale.y = Math.max(.05, lot.timer / 3); else if (lot.rubble.scale.y < 1) lot.rubble.scale.y = Math.min(1, lot.rubble.scale.y + dt * 1.6); }   // ruina sa vynorí spod prachu
     if (lot.timer <= 0) {
       makeBuilding(lot, false);
     }
@@ -1462,6 +1620,8 @@ function update(dt) {
   flashEl.style.opacity = String(flash * .35);
 
   updateCars(dt);
+  updateDecor(dt);
+  for (const b of buildings) if (b.blades && b.alive) b.blades.rotation.z += dt * (.5 + S.lv.power * .02);   // mlyn sa točí
   updateDebris(dt);
   updateFires(dt);
   updatePuffs(dt);
@@ -1905,7 +2065,7 @@ window.addEventListener('beforeunload', save);
 /* ================================================================
    Štart
    ================================================================ */
-initCity(); initTrees(); initCars();
+initCity(); initTrees(); initDecor(); initCars();
 setMuted(S.muted);
 [...$('qty').children].forEach(b => b.classList.toggle('on', b.dataset.q === S.qty));
 window.addEventListener('resize', resize); resize();
