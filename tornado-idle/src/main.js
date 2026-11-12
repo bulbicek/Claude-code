@@ -468,15 +468,36 @@ makeGround();
    Budovy
    ================================================================ */
 function windowTexture(def, tier) {
-  const cw = 22, ch = 22, W = def.cols * cw, H = def.rows * ch;
+  const cw = tier >= 3 ? 28 : 22, ch = tier >= 3 ? 28 : 22, W = def.cols * cw, H = def.rows * ch;
   const c = document.createElement('canvas'); c.width = W; c.height = H;
-  const g = c.getContext('2d'), glass = tier >= 3;
-  g.fillStyle = glass ? '#cfd8e2' : '#ffffff'; g.fillRect(0, 0, W, H);
-  for (let r = 0; r < def.rows; r++) for (let k = 0; k < def.cols; k++) {
-    const x = k * cw + (glass ? 2 : 5), y = r * ch + (glass ? 3 : 5), w = cw - (glass ? 4 : 10), h = ch - (glass ? 7 : 10);
-    if (tier <= 1 && r === 0 && k === 0) { g.fillStyle = '#6b4a35'; g.fillRect(x, y - 2, w, h + 4); continue; } // dvere
-    g.fillStyle = glass ? '#27425e' : '#3a4a63'; g.fillRect(x, y, w, h);
-    g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(x, y, w, 2);
+  const g = c.getContext('2d'), glass = tier >= 3, lerpHex = (a, b, k) => '#' + [1, 3, 5].map(i => Math.round(parseInt(a.substr(i, 2), 16) * (1 - k) + parseInt(b.substr(i, 2), 16) * k).toString(16).padStart(2, '0')).join('');
+  if (glass) {
+    // prirodzená presklená fasáda: svetlý rám/pásy medzi poschodiami + tabule s prechodom (hore odraz oblohy, dole tmavšie) a rôznou jasnosťou
+    g.fillStyle = '#d2d8de'; g.fillRect(0, 0, W, H);
+    for (let r = 0; r < def.rows; r++) for (let k = 0; k < def.cols; k++) {
+      const x = k * cw + 2, y = r * ch + 1, w = cw - 4, h = ch - 6;               // dole zostane pás medzi poschodiami
+      const f = .84 + Math.random() * .26, lighter = Math.random() < .09, row = r / def.rows;
+      const top = lerpHex('#a9c3d6', '#dbe8f1', lighter ? .55 : 0), bot = lerpHex('#4f7189', '#8fb0c6', lighter ? .45 : 0);
+      const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, top); gr.addColorStop(1, bot);
+      g.globalAlpha = Math.min(1, f); g.fillStyle = gr; g.fillRect(x, y, w, h); g.globalAlpha = 1;
+      g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x, y, w, 1.5);              // odlesk na hrane
+      g.fillStyle = 'rgba(20,40,60,.14)'; g.fillRect(x, y + h - 2, w, 2);
+      if (Math.random() < .12) { g.fillStyle = 'rgba(255,255,255,.14)'; g.beginPath(); g.moveTo(x + w * .15, y + h); g.lineTo(x + w * .55, y); g.lineTo(x + w * .75, y); g.lineTo(x + w * .35, y + h); g.fill(); }   // šikmý odraz
+    }
+    g.fillStyle = 'rgba(120,132,144,.55)';                                          // pásy medzi poschodiami (spandrel)
+    for (let r = 0; r < def.rows; r++) g.fillRect(0, r * ch + ch - 5, W, 2);
+  } else {
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    for (let r = 0; r < def.rows; r++) for (let k = 0; k < def.cols; k++) {
+      const x = k * cw + 5, y = r * ch + 5, w = cw - 10, h = ch - 10;
+      if (tier <= 1 && r === 0 && k === 0) { g.fillStyle = '#6b4a35'; g.fillRect(x, y - 2, w, h + 4); continue; } // dvere
+      const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, '#6e86a0'); gr.addColorStop(1, '#475d77');
+      g.fillStyle = '#c9c5bb'; g.fillRect(x - 1.5, y - 1.5, w + 3, h + 3);          // rám okna
+      g.fillStyle = gr; g.fillRect(x, y, w, h);
+      g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x, y, w, 2);
+      g.fillStyle = 'rgba(0,0,0,.12)'; g.fillRect(x + w / 2 - .5, y, 1, h);          // stredový stĺpik
+      g.fillStyle = '#b9b4a8'; g.fillRect(x - 2, y + h + 1.5, w + 4, 1.5);           // parapet
+    }
   }
   const t = bakeTexture(c); t.anisotropy = 4;
   return t;
@@ -488,7 +509,8 @@ const winTex = TIERS.map((d, i) => windowTexture(d, i));
 function wallMat(tier, hex) {
   const k = tier + hex;
   if (wallMats[k]) return wallMats[k];
-  return wallMats[k] = new THREE.MeshStandardMaterial({ map: winTex[tier], vertexColors: true, color: hex, roughness: tier >= 3 ? .35 : .85, metalness: tier >= 3 ? .25 : 0 });
+  const col = new THREE.Color(hex); if (tier >= 3) col.lerp(new THREE.Color('#ffffff'), .62);     // sklenená fasáda: farba je len jemný odtieň, nie tmavá výplň
+  return wallMats[k] = new THREE.MeshStandardMaterial({ map: winTex[tier], vertexColors: true, color: col, roughness: tier >= 3 ? .3 : .85, metalness: tier >= 3 ? .12 : 0, envMapIntensity: tier >= 3 ? 1.5 : 1 });
 }
 const bodyGeo = TIERS.map(d => {   // zapečené "ambient occlusion" pri zemi a mierne zosvetlenie smerom hore (zadarmo za behu)
   const g = new THREE.BoxGeometry(d.w, d.h, d.d, 1, Math.ceil(d.h / 1.2), 1).translate(0, d.h / 2, 0);
