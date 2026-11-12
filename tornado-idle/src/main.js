@@ -934,7 +934,7 @@ let wtI = 0;
 const geysers = [];
 function startGeyser(b) {
   if (geysers.length >= 3) return;
-  const s = clamp(Math.max(b.def.w, b.def.d) * .5, 1, 2.4), H = clamp(b.h * .9, 3.2, 8);
+  const s = clamp(Math.max(b.def.w, b.def.d) * .5, 1, 2.4) * .6, H = clamp(b.h * .9, 3.2, 8) * .6;
   geysers.push({ x: b.x, z: b.z, t: 0, life: rand(2.3, 3.2), s, H, em: 0, mist: 0 });
   shockRing(b.x, b.z, s * 3.2, .9, 0xa8d8ff, .35);
   burst(1800, .12, .9, 1.2);
