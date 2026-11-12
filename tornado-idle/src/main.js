@@ -840,7 +840,7 @@ const pf = { life: new Float32Array(PF), max: new Float32Array(PF), vx: new Floa
 let pn = 0;
 const fires = [];
 // Elektrické iskrenie: po niektorých zničených budovách krátko preskakujú oblúky (reťaz svietivých bodov, aditívne miešanie) + lietajúce iskry
-const SPN = 520, sp = { pos: new Float32Array(SPN * 3), size: new Float32Array(SPN), alpha: new Float32Array(SPN), col: new Float32Array(SPN * 3), vel: new Float32Array(SPN * 3),
+const SPN = 760, sp = { grow: new Float32Array(760), pos: new Float32Array(SPN * 3), size: new Float32Array(SPN), alpha: new Float32Array(SPN), col: new Float32Array(SPN * 3), vel: new Float32Array(SPN * 3),
   ttl: new Float32Array(SPN), max: new Float32Array(SPN), grav: new Float32Array(SPN) };
 let spI = 0;
 const spGeo = new THREE.BufferGeometry();
@@ -853,10 +853,10 @@ const spPoints = new THREE.Points(spGeo, new THREE.ShaderMaterial({
     void main(){ float d=length(gl_PointCoord-0.5)*2.0; float a=pow(clamp(1.0-d,0.0,1.0),1.7)*vA; if(!(a>=0.004)) discard; gl_FragColor=vec4(vC,a); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
 }));
 spPoints.frustumCulled = false; spPoints.renderOrder = 9; scene.add(spPoints);
-function spPoint(x, y, z, vx, vy, vz, size, ttl, r, g, b, grav) {
+function spPoint(x, y, z, vx, vy, vz, size, ttl, r, g, b, grav, grow) {
   const i = spI; spI = (spI + 1) % SPN;
   sp.pos[i * 3] = x; sp.pos[i * 3 + 1] = y; sp.pos[i * 3 + 2] = z; sp.vel[i * 3] = vx; sp.vel[i * 3 + 1] = vy; sp.vel[i * 3 + 2] = vz;
-  sp.size[i] = size; sp.ttl[i] = sp.max[i] = ttl; sp.col[i * 3] = r; sp.col[i * 3 + 1] = g; sp.col[i * 3 + 2] = b; sp.grav[i] = grav || 0;
+  sp.size[i] = size; sp.ttl[i] = sp.max[i] = ttl; sp.col[i * 3] = r; sp.col[i * 3 + 1] = g; sp.col[i * 3 + 2] = b; sp.grav[i] = grav || 0; sp.grow[i] = grow || 0;
 }
 function spawnArc(x, y, z) {                                      // jeden zubatý oblúk dĺžky ~1–2,5 m + záblesk a pár lietajúcich iskier
   const a = rand(0, 6.3), len = rand(1.6, 3.6), dx = Math.cos(a), dz = Math.sin(a), n = 10, sx = x + rand(-.7, .7), sz = z + rand(-.7, .7), lift = rand(-.1, .7);
@@ -880,11 +880,94 @@ function updateSparks(dt) {
     if (sp.ttl[i] <= 0) { sp.alpha[i] = 0; continue; }
     sp.ttl[i] -= dt;
     if (sp.ttl[i] <= 0) { sp.alpha[i] = 0; sp.size[i] = 0; continue; }
-    sp.vel[i * 3 + 1] -= sp.grav[i] * dt;
+    sp.vel[i * 3 + 1] -= sp.grav[i] * dt; sp.size[i] += sp.grow[i] * dt;
     sp.pos[i * 3] += sp.vel[i * 3] * dt; sp.pos[i * 3 + 1] = Math.max(.05, sp.pos[i * 3 + 1] + sp.vel[i * 3 + 1] * dt); sp.pos[i * 3 + 2] += sp.vel[i * 3 + 2] * dt;
     sp.alpha[i] = Math.pow(sp.ttl[i] / sp.max[i], .6) * (sp.grav[i] ? 1 : .55 + .45 * Math.random());          // oblúky mierne blikajú
   }
   for (const k of ['position', 'aSize', 'aAlpha', 'aColor']) spGeo.attributes[k].needsUpdate = true;
+}
+// Tlaková vlna: pár opakovane použitých prstencov na zemi (výbuch = biely, gejzír = modrý)
+const rings = [0, 1, 2, 3].map(() => {
+  const m = new THREE.Mesh(new THREE.RingGeometry(.88, 1, 56).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false, side: THREE.DoubleSide }));
+  m.visible = false; m.renderOrder = 4; m.position.y = .12; scene.add(m); return { m, t: 1, life: 1, r: 1 };
+});
+let ringI = 0;
+function shockRing(x, z, r, life, color, op) {
+  const k = rings[ringI]; ringI = (ringI + 1) % rings.length;
+  k.m.position.set(x, heightAt(x, z) + .12, z); k.m.material.color.set(color); k.t = 0; k.life = life; k.r = r; k.op = op; k.m.visible = true;
+}
+function updateRings(dt) {
+  for (const k of rings) {
+    if (!k.m.visible) continue; k.t += dt; const f = k.t / k.life;
+    if (f >= 1) { k.m.visible = false; continue; }
+    const r = k.r * (.25 + .75 * (1 - Math.pow(1 - f, 2)));                // rýchlo sa rozbehne, potom spomalí
+    k.m.scale.set(r, 1, r); k.m.material.opacity = k.op * Math.pow(1 - f, 1.4);
+  }
+}
+// Výbuch: žiariaca oranžová guľa s bielym jadrom, ktorá vyhasína do tmavočerveného a čierneho dymu; úlomky a jemná tlaková vlna
+let lastExpl = -9;
+function explode(b) {
+  const w = b.lot.kind === 'landmark' ? Math.max(b.def.w, b.def.d) : b.def.w, S0 = clamp(w * .95, 1.6, 4.2), y0 = clamp(b.h * .28, .7, 2.6);
+  const x = b.x, z = b.z;
+  spPoint(x, y0, z, 0, 0, 0, S0 * 1.5, .11, 1.3, .95, .6, 0, S0 * 3);                                              // záblesk
+  for (let i = 0; i < 4; i++) spPoint(x + rand(-.2, .2) * S0, y0 + rand(-.1, .2) * S0, z + rand(-.2, .2) * S0, 0, rand(.8, 1.6), 0, S0 * .55, rand(.2, .32), 1.6, 1.5, 1.2, -.5, S0 * 1.1);          // biele jadro
+  for (let i = 0; i < 7; i++) spPoint(x + rand(-.35, .35) * S0, y0 + rand(0, .35) * S0, z + rand(-.35, .35) * S0, rand(-.8, .8), rand(1, 2.4), rand(-.8, .8), S0 * .8, rand(.35, .6), 1.5, rand(.75, .95), .22, -.6, S0 * 1.4);    // žlto-oranžová
+  for (let i = 0; i < 7; i++) spPoint(x + rand(-.5, .5) * S0, y0 + rand(0, .5) * S0, z + rand(-.5, .5) * S0, rand(-1, 1), rand(1.2, 3), rand(-1, 1), S0 * .95, rand(.55, .9), 1.15, rand(.35, .5), .08, -.7, S0 * 1.5);   // oranžovo-červená
+  for (let i = 0; i < 5; i++) spPoint(x + rand(-.55, .55) * S0, y0 + rand(.1, .6) * S0, z + rand(-.55, .55) * S0, rand(-1, 1), rand(1.5, 3.2), rand(-1, 1), S0 * 1.05, rand(.8, 1.25), .6, .1, .05, -.8, S0 * 1.3);              // dohasínajúca tmavočervená
+  for (let i = 0; i < 12; i++) { const a = rand(0, 6.3), v = rand(4, 9); spPoint(x, y0, z, Math.cos(a) * v, rand(3, 8), Math.sin(a) * v, rand(.1, .2), rand(.45, 1.1), 1.4, rand(.6, .85), .2, 12); }   // žeravé iskry
+  // dym: najprv tmavočervený, potom čierny
+  const RED = [1, .2, .12], BLK = [1, 1, 1];
+  for (let i = 0; i < 9; i++) puff(x + rand(-.5, .5) * S0, y0 + rand(0, .6) * S0, z + rand(-.5, .5) * S0, rand(-1, 1), rand(2.2, 4), rand(-1, 1), S0 * .9, S0 * rand(2.2, 3.2), rand(1.6, 2.6), .7, rand(.36, .5), RED);
+  for (let i = 0; i < 12; i++) puff(x + rand(-.6, .6) * S0, y0 + rand(.2, 1) * S0, z + rand(-.6, .6) * S0, rand(-1.2, 1.2), rand(2.5, 4.8), rand(-1.2, 1.2), S0 * 1.2, S0 * rand(3, 4.5), rand(3.2, 5), .85, rand(.05, .11), BLK);
+  // úlomky
+  const n = 12 + b.tier * 3;
+  for (let i = 0; i < n; i++) { const a = rand(0, 6.3), v = rand(4, 10), col = Math.random() < .35 ? pick(['#2a2523', '#4a3a30', '#5a4a40']) : Math.random() < .5 ? b.wallHex : b.roofHex;
+    spawnDebris(x + Math.cos(a) * rand(0, b.r), y0 + rand(0, 1), z + Math.sin(a) * rand(0, b.r), Math.cos(a) * v, rand(3.5, 9.5), Math.sin(a) * v, (b.def.csz || b.def.w * .13) * rand(.7, 1.5), col); }
+  // jemná tlaková vlna: prstenec + nízky pás prachu odfúknutý von
+  shockRing(x, z, S0 * 3.4, .6, 0xffffff, .26);
+  for (let i = 0; i < 16; i++) { const a = i / 16 * 6.283 + rand(-.15, .15), v = rand(7, 10.5); puff(x + Math.cos(a) * S0 * .4, .3, z + Math.sin(a) * S0 * .4, Math.cos(a) * v, rand(.1, .5), Math.sin(a) * v, S0 * .7, S0 * rand(1.8, 2.5), rand(.7, 1.2), .3, rand(.7, .85)); }
+  cam.shake = Math.max(cam.shake, .25 + S0 * .05); burst(220, .55, .7, .8);
+}
+// Gejzír vody na mieste zničenej budovy: stĺp kvapiek, ktoré padajú späť, hmla a vlnky
+const WN = 640, wtp = new Particles(WN, 8), wt = { vx: new Float32Array(WN), vy: new Float32Array(WN), vz: new Float32Array(WN), life: new Float32Array(WN), max: new Float32Array(WN), sz: new Float32Array(WN) };
+let wtI = 0;
+const geysers = [];
+function startGeyser(b) {
+  if (geysers.length >= 3) return;
+  const s = clamp(Math.max(b.def.w, b.def.d) * .5, 1, 2.4), H = clamp(b.h * .9, 3.2, 8);
+  geysers.push({ x: b.x, z: b.z, t: 0, life: rand(2.3, 3.2), s, H, em: 0, mist: 0 });
+  shockRing(b.x, b.z, s * 3.2, .9, 0xa8d8ff, .35);
+  burst(1800, .12, .9, 1.2);
+}
+function updateGeysers(dt) {
+  for (let gI = geysers.length - 1; gI >= 0; gI--) {
+    const G = geysers[gI]; G.t += dt;
+    if (G.t > G.life) { geysers.splice(gI, 1); continue; }
+    const f = G.t / G.life, power = Math.sin(Math.min(1, f * 1.15) * Math.PI) * (.8 + .2 * Math.sin(G.t * 11));     // nabehne, vrchol, utíchne, jemne pulzuje
+    const hh = G.H * (.45 + .55 * power), vy0 = Math.sqrt(2 * 14 * hh);
+    G.em += dt * 170 * Math.max(0, power); G.mist += dt * 11 * Math.max(0, power);
+    while (G.em >= 1) {
+      G.em -= 1; const a = rand(0, 6.3), r = rand(0, G.s * .22), sp = rand(0, .16) * vy0 * (.4 + Math.random()), i = wtI; wtI = (wtI + 1) % WN;
+      wtp.pos[i * 3] = G.x + Math.cos(a) * r; wtp.pos[i * 3 + 1] = heightAt(G.x, G.z) + .2; wtp.pos[i * 3 + 2] = G.z + Math.sin(a) * r;
+      wt.vx[i] = Math.cos(a) * sp; wt.vz[i] = Math.sin(a) * sp; wt.vy[i] = vy0 * rand(.72, 1.05); wt.sz[i] = G.s * rand(.32, .6);
+      wt.life[i] = wt.max[i] = 2 * wt.vy[i] / 14 + .15;
+    }
+    while (G.mist >= 1) { G.mist -= 1; const a = rand(0, 6.3); puff(G.x + Math.cos(a) * G.s * .3, .4, G.z + Math.sin(a) * G.s * .3, Math.cos(a) * rand(.8, 2.2), rand(.8, 2), Math.sin(a) * rand(.8, 2.2), G.s * .9, G.s * rand(2, 3), rand(.8, 1.4), .32, .95, [.78, .9, 1]); }   // hmla pri základni
+    if (G.t < .15 || (power > .6 && Math.random() < dt * 5)) shockRing(G.x, G.z, G.s * rand(2.2, 3.4), .8, 0xcfe8ff, .25);
+  }
+  for (let i = 0; i < WN; i++) {
+    if (wt.life[i] <= 0) { wtp.alpha[i] = 0; wtp.size[i] = 0; continue; }
+    wt.life[i] -= dt; wt.vy[i] -= 14 * dt;
+    const k = i * 3; wtp.pos[k] += wt.vx[i] * dt; wtp.pos[k + 1] += wt.vy[i] * dt; wtp.pos[k + 2] += wt.vz[i] * dt;
+    if (wt.life[i] <= 0 || (wtp.pos[k + 1] < .1 && wt.vy[i] < 0)) {                         // dopad: drobný cez-hmla
+      if (wt.life[i] > 0 && Math.random() < .12) puff(wtp.pos[k], .2, wtp.pos[k + 2], 0, .4, 0, .4, 1.1, .5, .3, .95, [.8, .92, 1]);
+      wt.life[i] = 0; wtp.alpha[i] = 0; wtp.size[i] = 0; continue;
+    }
+    const p = 1 - wt.life[i] / wt.max[i];
+    wtp.size[i] = wt.sz[i]; wtp.alpha[i] = .9 * Math.min(1, (1 - p) * 4);
+    wtp.col[k] = .86; wtp.col[k + 1] = .95; wtp.col[k + 2] = 1;
+  }
+  wtp.flush();
 }
 const FIRE_T = 6, SMOKE_T = 10, FIRE_TINT = [1, .55, .12], SMOKE_TINT = [1, 1, 1];
 function updateFires(dt) {
@@ -1269,16 +1352,25 @@ const riverMat = new THREE.ShaderMaterial({
       float depth=${f3(WATER_Y)}-bedH(d)*fade;                                   // hĺbka vody nad dnom
       if(depth<=0.0) discard;
       vec2 p=vW.xz; float t=uTime;
-      vec2 q=vec2((vUv.x-.5)*${f3(2 * (RIVER_HALF + 2.4))}*.3, vUv.y*5.0*.3);                      // súradnice pozdĺž toku: vlny sa ťahajú po prúde
-      vec2 qa=q+vec2(0.0,-t*.14), qb=q*vec2(1.7,1.3)+vec2(4.3,-t*.23), qc=q*vec2(3.1,2.2)+vec2(9.1,-t*.35);
-      float amp=.55+.9*vn(p*.07+vec2(t*.01,0.0));                                 // pomalé veľkoplošné zmeny sily vlnenia
+      vec2 q=vec2((vUv.x-.5)*${f3(2 * (RIVER_HALF + 2.4))}*.3, vUv.y*5.0*.3);                      // súradnice: naprieč / po prúde
+      float lane=1.0-abs(vUv.x-.5)*2.0;                                            // 1 uprostred, 0 pri brehu (stred tečie rýchlejšie)
+      float amp=.55+.9*vn(p*.07+vec2(t*.01,0.0));
       vec2 g=vec2(0.0); float e=.14;
-      g.x=wh(qa+vec2(e,0.))-wh(qa-vec2(e,0.))+(wh(qb+vec2(e,0.))-wh(qb-vec2(e,0.)))*.6;
-      g.y=wh(qa+vec2(0.,e))-wh(qa-vec2(0.,e))+(wh(qb+vec2(0.,e))-wh(qb-vec2(0.,e)))*.6;
-      #ifdef HQ
-      g.x+=(wh(qc+vec2(e,0.))-wh(qc-vec2(e,0.)))*.3; g.y+=(wh(qc+vec2(0.,e))-wh(qc-vec2(0.,e)))*.3;
-      #endif
+      for(int i=0;i<2;i++){                                                       // dve vrstvy posunuté o pol cyklu, plynulo prelievané → vzor sa neopakuje ani nepulzuje
+        float ph=fract(t*.1+float(i)*.5), wgt=1.0-abs(1.0-2.0*ph);
+        vec2 qo=q+vec2(float(i)*7.31, -ph*(5.0+lane*4.0));
+        qo+=(vec2(vn(qo*.55+t*.05),vn(qo*.55+9.0-t*.04))-.5)*1.1;                  // pomalé skrúcanie vzoru (mriežka sa mení)
+        vec2 qb=qo*vec2(1.7,1.3)+vec2(4.3,0.0);
+        vec2 gi=vec2(wh(qo+vec2(e,0.))-wh(qo-vec2(e,0.))+(wh(qb+vec2(e,0.))-wh(qb-vec2(e,0.)))*.6,
+                     wh(qo+vec2(0.,e))-wh(qo-vec2(0.,e))+(wh(qb+vec2(0.,e))-wh(qb-vec2(0.,e)))*.6);
+        #ifdef HQ
+        vec2 qc=qo*vec2(3.1,2.2)+vec2(9.1,2.0);
+        gi+=vec2(wh(qc+vec2(e,0.))-wh(qc-vec2(e,0.)),wh(qc+vec2(0.,e))-wh(qc-vec2(0.,e)))*.3;
+        #endif
+        g+=gi*wgt;
+      }
       g*=amp*1.25;
+      float streak=smoothstep(.64,.92,vn(vec2(q.x*1.7,(q.y-t*(.9+lane*.6))*.55)))*(.25+.5*lane);   // svetlé pruhy unášané prúdom
       vec3 n=normalize(vec3(-g.x,1.0,-g.y));
       vec3 v=normalize(cameraPosition-vW);
       float F=clamp(.07+.93*pow(1.0-max(dot(n,v),0.0),3.0),0.0,1.0);         // Fresnel: pri plytkom uhle zrkadlí
@@ -1287,7 +1379,7 @@ const riverMat = new THREE.ShaderMaterial({
       float sd=max(dot(normalize(r),normalize(uSunDir)),0.0);
       vec3 spec=uSunCol*(pow(sd,120.0)*5.0+pow(sd,14.0)*.35);                 // odlesky slnka
       vec3 col=mix(uDeep,uShallow,exp(-depth*1.6));
-      col=mix(col,sky,clamp(F*.95+.16,0.0,1.0))+spec;
+      col=mix(col,sky,clamp(F*.95+.16,0.0,1.0))+spec+vec3(.55,.68,.78)*streak*.35;
       float foam=1.0-smoothstep(.0,.2,depth+sin(p.x*5.0+t*2.0)*.04+sin(p.y*4.0-t*1.7)*.04);
       col=mix(col,vec3(.93,.96,.98),foam*.8);
       float a=clamp(depth*2.8,0.0,1.0)*.95+F*.05;
@@ -1505,12 +1597,18 @@ function destroyBuilding(b) {
   cam.shake = Math.min(1.2, cam.shake + .08 + b.tier * .1);
   crashSound(b.tier);
   S.destroyed++; if (b.lot.kind === 'bridge') S.bridges++;
-  if (b.lot.kind !== 'bridge' && sparks.length < 5 && Math.random() < .17) {            // občas po budove preskakujú iskry
+  let boom = false, water = false;
+  if (b.lot.kind !== 'bridge') {
+    const nowT = time, r = Math.random();
+    if (r < .09 && nowT - lastExpl > 1.4) { boom = true; lastExpl = nowT; explode(b); if (Math.random() < .3) news(pick(t('explNews'))); }
+    else if (r < .20) { water = true; startGeyser(b); if (Math.random() < .3) news(pick(t('geyserNews'))); }
+  }
+  if (b.lot.kind !== 'bridge' && !water && sparks.length < 5 && Math.random() < .17) {            // občas po budove preskakujú iskry
     sparks.push({ x: b.x, y: .4, z: b.z, t: 0, life: rand(1.2, 2.2), next: rand(.05, .3) });
     if (Math.random() < .3) news(pick(t('sparkNews')));
   }
   if (b.lot.kind === 'bridge') { /* most nehorí */ }
-  else if (fires.length < 8 && Math.random() < .22) {     // občas po budove ostane požiar
+  else if (!water && fires.length < 8 && Math.random() < (boom ? .7 : .22)) {                            // po výbuchu častejšie zostane požiar     // občas po budove ostane požiar
     fires.push({ x: b.x, z: b.z, t: 0, s: clamp(b.def.w * .45, .9, 2.2), fa: 0, sa: 0 });
     if (Math.random() < .3) news(pick(t('fire')));
   }
@@ -1754,6 +1852,8 @@ function update(dt) {
   updateDebris(dt);
   updateFires(dt);
   updateSparks(dt);
+  updateRings(dt);
+  updateGeysers(dt);
   updatePuffs(dt);
   updateSwirl(dt);
   updateFunnel(dt);
@@ -2268,7 +2368,7 @@ if (firstRun) {
 
 let frameNo = 0;
 let last = performance.now(), hudT = 0, radT = 0, saveT = 0, uiT = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
-window.__tornado = { route, ZONES, startRoute, offerRoute, sparks, sp, puffs, fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, get H() { return H; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
+window.__tornado = { explode, startGeyser, geysers, rings, route, ZONES, startRoute, offerRoute, sparks, sp, puffs, fires, renderer, AU, SH, scene, camera, S, ts: 1, T, get R() { return R; }, get H() { return H; }, buildings, trees, update, commandTo, UPG, buy, news, fmt, cam };
 function frame(now) {
   const rdt = Math.min(.1, (now - last) / 1000); last = now;
   const ts = window.__tornado.ts;
