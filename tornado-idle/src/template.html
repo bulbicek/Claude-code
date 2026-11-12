@@ -22,6 +22,11 @@ body.cine #grain{display:block;inset:-64px;opacity:.11;mix-blend-mode:overlay;ba
 @keyframes grain{0%{transform:translate(0,0)}17%{transform:translate(-31px,19px)}33%{transform:translate(23px,-41px)}50%{transform:translate(-47px,-13px)}67%{transform:translate(37px,29px)}83%{transform:translate(-11px,-53px)}}
 body.cine #c{filter:contrast(1.09) saturate(1.14) brightness(.98)}
 body.cine #vig{background:radial-gradient(ellipse at 50% 45%,transparent 48%,rgba(3,8,22,.58) 100%)}
+/* režim bez rozhrania: skryje všetko okrem scény; ostane len nenápadné tlačidlo na návrat */
+#zenback{position:fixed;right:10px;bottom:10px;z-index:6;width:38px;height:38px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(7,25,61,.35);color:#fff;font-size:17px;cursor:pointer;display:none;opacity:.22;transition:opacity .3s}
+#zenback:hover,#zenback:active{opacity:.95}
+body.zen #top,body.zen #left,body.zen #panel,body.zen #hint,body.zen #ticker,body.zen #fx{display:none!important}
+body.zen #zenback{display:block}
 #flash{position:fixed;inset:0;background:#dbe8ff;opacity:0;pointer-events:none;mix-blend-mode:screen}
 #fx{position:fixed;inset:0;pointer-events:none;overflow:hidden}
 .pop{position:absolute;left:0;top:0;font-weight:800;color:var(--yellow);text-shadow:0 2px 0 rgba(0,0,0,.55),0 0 8px rgba(0,0,0,.5);
@@ -192,6 +197,7 @@ body.cine #vig{background:radial-gradient(ellipse at 50% 45%,transparent 48%,rgb
 <body>
 <canvas id="c"></canvas>
 <div id="vig"></div>
+<button id="zenback" data-it="tZen">👁</button>
 <div id="grade"></div>
 <div id="grain"></div>
 <div id="flash"></div>
@@ -200,7 +206,7 @@ body.cine #vig{background:radial-gradient(ellipse at 50% 45%,transparent 48%,rgb
 <header id="top">
   <div class="brand"><span class="live"><i></i>LIVE</span><b>METEO</b><em>24</em></div>
   <div class="headline" id="headline" data-i="headline">Tornádo · priamy prenos z postihnutej oblasti</div>
-  <div id="bar-btns"><button class="ib lang" id="btn-lang" data-it="tLang">SK</button><button class="ib" id="btn-cine" data-it="tCine">🎬</button><button class="ib" id="btn-reset" data-it="tReset">↺</button><button class="ib" id="btn-mute" data-it="tMute">🔊</button></div>
+  <div id="bar-btns"><button class="ib" id="btn-zen" data-it="tZen">👁</button><button class="ib lang" id="btn-lang" data-it="tLang">SK</button><button class="ib" id="btn-cine" data-it="tCine">🎬</button><button class="ib" id="btn-reset" data-it="tReset">↺</button><button class="ib" id="btn-mute" data-it="tMute">🔊</button></div>
   <div class="clock"><span id="clockIcon">⛈️</span><span id="clock">12:00</span></div>
 </header>
 

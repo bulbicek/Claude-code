@@ -1537,7 +1537,7 @@ function updateAudio(dt) {
 const fxLayer = $('fx');
 const pops = [];
 function floatText(x, y, z, text, scale) {
-  if (pops.length > 14 || (scale < 1 && pops.length > 7)) return;
+  if (document.body.classList.contains('zen') || pops.length > 14 || (scale < 1 && pops.length > 7)) return;
   const el = document.createElement('div'); el.className = 'pop'; el.textContent = text;
   el.style.fontSize = (10 + Math.min(5, scale * 1.2)) + 'px';
   fxLayer.appendChild(el); pops.push({ el, p: new THREE.Vector3(x, y, z), t: 0 });
@@ -2157,6 +2157,7 @@ window.addEventListener('keydown', e => {
   if (e.key >= '1' && e.key <= '6') { const u = UPG[+e.key - 1]; if (u) buy(u); }
   else if (e.key === 'm' || e.key === 'M') setMuted(!S.muted);
   else if (e.key === ' ') { e.preventDefault(); useBoost(); }
+  else if (e.key === 'h' || e.key === 'H') setZen(!document.body.classList.contains('zen'));
   else if (e.key === 'l' || e.key === 'L') setLang(lang() === 'sk' ? 'en' : 'sk');
   else if (e.key === 'c' || e.key === 'C') setCine(!document.body.classList.contains('cine'), true);
   lastInput = performance.now();
@@ -2184,6 +2185,9 @@ function setLang(code) {
 }
 $('route').addEventListener('click', e => { const b = e.target.closest('.rb'); if (b) startRoute(+b.dataset.i); });
 $('btn-lang').addEventListener('click', () => setLang(lang() === 'sk' ? 'en' : 'sk'));
+function setZen(on) { document.body.classList.toggle('zen', on); if (on) { for (const q of pops) q.el.remove(); pops.length = 0; } }
+$('btn-zen').addEventListener('click', () => setZen(true));
+$('zenback').addEventListener('click', () => setZen(false));
 function setCine(on, user) { if (user) S.cine = on; document.body.classList.toggle('cine', on); $('btn-cine').style.opacity = on ? 1 : .45; }
 $('btn-cine').addEventListener('click', () => { setCine(!document.body.classList.contains('cine'), true); save(); });
 setCine(S.cine == null ? !LOW : S.cine);
