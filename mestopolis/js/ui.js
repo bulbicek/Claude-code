@@ -179,7 +179,7 @@ export class UI {
   }
 
   newCityDialog(first = false) {
-    const hasSave = !!localStorage.getItem('mestopolis-save');
+    let hasSave = false; try { hasSave = !!localStorage.getItem('mestopolis-save'); } catch (e) { }
     const seed = Math.floor(Math.random() * 99999);
     const d = this.dialog('Nové mesto', `
       <div class="logo">MESTOPOLIS 3D</div>

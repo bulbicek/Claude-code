@@ -76,7 +76,7 @@ class Game {
     } catch (e) { this.ui.pushNews('Uloženie zlyhalo: ' + e.message, 'bad'); }
   }
   load() {
-    const s = localStorage.getItem('mestopolis-save');
+    let s = null; try { s = localStorage.getItem('mestopolis-save'); } catch (e) { }
     if (!s) { this.ui.pushNews('Žiadne uložené mesto.', 'warn'); return; }
     try { this.attach(World.deserialize(s)); this.ui.pushNews(`Mesto ${this.world.state.name} bolo nahraté.`, 'good'); }
     catch (e) { this.ui.pushNews('Nahrávanie zlyhalo: ' + e.message, 'bad'); }
@@ -95,7 +95,7 @@ class Game {
     };
     inp.click();
   }
-  saveSettings() { localStorage.setItem('mestopolis-settings', JSON.stringify({ ...this.r.settings, autosave: this.autosave })); }
+  saveSettings() { try { localStorage.setItem('mestopolis-settings', JSON.stringify({ ...this.r.settings, autosave: this.autosave })); } catch (e) { } }
   loadSettings() {
     try {
       const s = JSON.parse(localStorage.getItem('mestopolis-settings') || '{}');
@@ -523,7 +523,7 @@ class Game {
 window.game = new Game();
 
 // ---- PWA: service worker (offline) ----
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+try { if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('./sw.js').then(reg => {
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;
@@ -532,7 +532,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       });
     });
   }).catch(e => console.warn('SW:', e));
-}
+} } catch (e) { /* napr. v sandboxe bez service workerov */ }
 let deferredInstall = null;
 addEventListener('beforeinstallprompt', e => {
   e.preventDefault(); deferredInstall = e;
