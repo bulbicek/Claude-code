@@ -1,5 +1,5 @@
 // Mestopolis – service worker: hra funguje aj offline
-const VERSION = 'mestopolis-v1';
+const VERSION = 'mestopolis-v2';
 const ASSETS = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './js/main.js', './js/config.js', './js/noise.js', './js/world.js', './js/sim.js', './js/geom.js',

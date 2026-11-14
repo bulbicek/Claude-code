@@ -36,6 +36,7 @@ button:disabled { color: #888; text-shadow: 1px 1px #fff; cursor: default; }
 #viewport { flex: 1; position: relative; min-width: 0; }
 #view { touch-action: none; width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: crosshair; }
 #rotate { position: absolute; top: 8px; right: 8px; display: flex; gap: 2px; }
+#rotate #undoBtn { width: auto; padding: 0 8px; font-size: 13px; }
 #rotate button { width: 28px; height: 26px; padding: 0; font-size: 15px; }
 #minimapWrap { position: absolute; right: 8px; bottom: 8px; padding: 2px; }
 #minimap { display: block; image-rendering: pixelated; cursor: pointer; width: 160px; height: 160px; background: #000; }
@@ -59,7 +60,7 @@ button:disabled { color: #888; text-shadow: 1px 1px #fff; cursor: default; }
 #flyout .item.dis { color: #888; cursor: default; background: none; }
 #flyout .item .cost { font-family: "Courier New", monospace; }
 
-#dialogs .win { position: absolute; z-index: 40; min-width: 300px; padding: 2px; }
+#dialogs .win { position: absolute; z-index: 40; min-width: 280px; max-width: calc(100vw - 12px); max-height: calc(100% - 12px); overflow: auto; padding: 2px; }
 #dialogs .win .body { padding: 10px; }
 #dialogs .modalbg { position: absolute; inset: 0; background: rgba(0,0,0,.35); z-index: 39; }
 .row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
@@ -85,4 +86,12 @@ input[type=text], input[type=number], select { font: inherit; border: 2px solid;
   #status { width: 160px; }
   #minimap, #minimapWrap canvas { width: 110px; height: 110px; }
   #topbar .menu button { padding: 3px 4px; }
+}
+#fatal { position: fixed; z-index: 100; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(420px, 92vw); }
+#fatal .body { padding: 12px; font-weight: normal; white-space: pre-wrap; }
+#dialogs .win .btns { position: sticky; bottom: -10px; margin: 10px -10px -10px; padding: 8px 10px; background: #c3c3c3; border-top: 1px solid #868686; }
+@media (max-height: 520px) {
+  #dialogs .row { margin: 2px 0; }
+  #dialogs .logo { font-size: 18px; }
+  #dialogs .body > p { display: none; }
 }

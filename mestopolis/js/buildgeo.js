@@ -146,39 +146,62 @@ function bridge(gb, w, x, y, n) {
 }
 
 // ---------- elektrické vedenie ----------
+// poloha stĺpa vedenia na políčku: { pole, ox, oz } (posun od stredu políčka)
+function plinePos(w, x, y) {
+  const i = w.ti(x, y);
+  const conn = (xx, yy) => w.inb(xx, yy) && (w.pline[w.ti(xx, yy)] || w.bid[w.ti(xx, yy)]);
+  const n = [conn(x, y - 1), conn(x + 1, y), conn(x, y + 1), conn(x - 1, y)];
+  const ew = (n[1] || n[3]) && !(n[0] || n[2]);
+  const ns = (n[0] || n[2]) && !(n[1] || n[3]);
+  const res = { pole: true, ox: 0, oz: 0, n, ew, ns };
+  if (w.road[i] && !w.water[i]) {
+    const r = nbs(w, x, y, w.road);
+    if (ew && !r[1] && !r[3]) res.pole = false;        // preklenutie cesty idúcej S-J
+    else if (ns && !r[0] && !r[2]) res.pole = false;   // preklenutie cesty idúcej V-Z
+    else if (ew) res.oz = 0.42;                        // pozdĺž cesty – pri krajnici
+    else if (ns) res.ox = 0.42;
+    else { res.ox = 0.42; res.oz = 0.42; }
+  }
+  return res;
+}
+
 export function powerline(gb, w, x, y) {
   const i = w.ti(x, y);
-  const hasRoad = w.road[i];
-  const conn = (xx, yy) => w.inb(xx, yy) && (w.pline[w.ti(xx, yy)] || w.bid[w.ti(xx, yy)] || w.zone[w.ti(xx, yy)]);
-  const n = [conn(x, y - 1), conn(x + 1, y), conn(x, y + 1), conn(x - 1, y)];
-  const off = hasRoad ? 0.4 : 0;
-  const px = x + 0.5 + off, pz = y + 0.5 + off;
-  const top = (w.water[i] ? SEA * HS : surfY(w, px, pz));
+  const P = plinePos(w, x, y), n = P.n;
   const H = 0.6;
+  const DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0];
+  const cx = x + 0.5, cz = y + 0.5;
+  const groundAt = (tx, tz) => (w.water[w.ti(tx, tz)] ? SEA * HS : surfY(w, tx + 0.5, tz + 0.5));
+  const cTop = groundAt(x, y);
+  // bod na hrane: výška aj posun sú priemerom oboch susedných políčok -> drôty na seba nadväzujú
+  const edge = k => {
+    const nx = x + DX[k], nz = y + DZ[k], ni = w.ti(nx, nz);
+    const hasP = w.pline[ni];
+    const Q = hasP ? plinePos(w, nx, nz) : P;
+    const nTop = hasP ? groundAt(nx, nz) : cTop;
+    const ex = k % 2 === 0 ? cx + (P.ox + Q.ox) / 2 : cx + DX[k] * 0.5;
+    const ez = k % 2 === 1 ? cz + (P.oz + Q.oz) / 2 : cz + DZ[k] * 0.5;
+    return [ex, (cTop + nTop) / 2 + H - 0.1, ez];
+  };
+  const wire = (a, e, perpX) => {
+    const mid = [(a[0] + e[0]) / 2, (a[1] + e[1]) / 2 - 0.04, (a[2] + e[2]) / 2];
+    for (const sgn of [-1, 1]) {
+      const o = 0.1 * sgn, d = perpX ? [o, 0, 0] : [0, 0, o];
+      const A = [a[0] + d[0], a[1], a[2] + d[2]], M = [mid[0] + d[0], mid[1], mid[2] + d[2]], E = [e[0] + d[0], e[1], e[2] + d[2]];
+      beam(gb, A, M, 0.006, C.wire); beam(gb, M, E, 0.006, C.wire);
+    }
+  };
+  if (!P.pole) {
+    if (P.ew) wire(edge(3), edge(1), false); else wire(edge(0), edge(2), true);
+    return;
+  }
+  const px = cx + P.ox, pz = cz + P.oz;
+  const top = (w.water[i] ? SEA * HS : surfY(w, px, pz));
   gb.box(px, top, pz, 0.035, H, 0.035, C.pole);
-  const ns = n[0] || n[2];
-  if (ns && !(n[1] || n[3])) gb.box(px, top + H - 0.05, pz, 0.26, 0.025, 0.03, C.pole);
+  if (P.ns) gb.box(px, top + H - 0.05, pz, 0.26, 0.025, 0.03, C.pole);
   else gb.box(px, top + H - 0.05, pz, 0.03, 0.025, 0.26, C.pole);
   const t = [px, top + H - 0.04, pz];
-  const ends = [[px, y - 0.0001], [x + 1.0001, pz], [px, y + 1.0001], [x - 0.0001, pz]];
-  for (let k = 0; k < 4; k++) {
-    if (!n[k]) continue;
-    const ex = k === 0 || k === 2 ? px : ends[k][0], ez = k === 1 || k === 3 ? pz : ends[k][1];
-    // výška na hrane = priemer s výškou suseda
-    const nx = x + [0, 1, 0, -1][k], ny = y + [-1, 0, 1, 0][k];
-    const ni = w.ti(nx, ny);
-    let nTop = w.water[ni] ? SEA * HS : surfY(w, nx + 0.5 + off, ny + 0.5 + off);
-    if (!w.pline[ni]) nTop = top;
-    const ey = ((top + nTop) / 2) + H - 0.1;
-    const mid = [(t[0] + ex) / 2, (t[1] + ey) / 2 - 0.04, (t[2] + ez) / 2];
-    for (const sgn of [-1, 1]) {
-      const o = 0.1 * sgn;
-      const a = k % 2 === 0 ? [t[0] + o, t[1], t[2]] : [t[0], t[1], t[2] + o];
-      const m = k % 2 === 0 ? [mid[0] + o, mid[1], mid[2]] : [mid[0], mid[1], mid[2] + o];
-      const e = k % 2 === 0 ? [ex + o, ey, ez] : [ex, ey, ez + o];
-      beam(gb, a, m, 0.006, C.wire); beam(gb, m, e, 0.006, C.wire);
-    }
-  }
+  for (let k = 0; k < 4; k++) if (n[k]) wire(t, edge(k), k % 2 === 0);
 }
 
 // ---------- potrubie (podzemný pohľad) ----------

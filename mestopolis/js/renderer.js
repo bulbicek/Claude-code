@@ -18,7 +18,8 @@ export class Renderer {
     r.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.scene = new THREE.Scene();
     this.uniforms = { uNight: { value: 0 }, uTime: { value: 0 }, uGrid: { value: 0 } };
-    this.settings = { pixel: 2, dither: true, grid: false, timeMode: 'cycle', shadows: true };
+    this.mobile = matchMedia('(pointer: coarse)').matches;
+    this.settings = { pixel: 0, dither: true, grid: false, timeMode: 'cycle', shadows: true };
     this.overlay = null;
     this.underground = false;
     this.tod = 0.38;
@@ -30,7 +31,8 @@ export class Renderer {
     // svetlá
     this.sun = new THREE.DirectionalLight(0xffffff, 2.5);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(4096, 4096);
+    const sm = this.mobile ? 2048 : 4096;
+    this.sun.shadow.mapSize.set(sm, sm);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target);
@@ -382,12 +384,28 @@ export class Renderer {
   }
 
   // ---------- kamera ----------
+  // rozlíšenie: pixel 0 = auto (zblízka retro pixely, z diaľky ostré plné rozlíšenie)
+  resMode() {
+    const p = this.settings.pixel;
+    if (p > 0) return 'p' + p;
+    const z = this.view.zoom;
+    if (this._mode === 'far' && z > 10.5) return 'far';
+    if (this._mode === 'near' && z < 12.5) return 'near';
+    return z > 11.5 ? 'far' : 'near';
+  }
   resize() {
     const W = this.canvas.clientWidth, H = this.canvas.clientHeight;
+    const mode = this._mode = this.resMode();
+    const dpr = Math.min(window.devicePixelRatio || 1, this.mobile ? 1.5 : 2);
+    let ratio = 1, px = 2;
+    if (mode === 'far') { ratio = dpr; px = 1; }
+    else if (mode === 'near') { ratio = 1; px = 2; }
+    else px = +mode.slice(1);
+    this.gl.setPixelRatio(ratio);
     this.gl.setSize(W, H, false);
-    const px = this.settings.pixel;
-    this.rt.setSize(Math.max(1, Math.floor(W / px)), Math.max(1, Math.floor(H / px)));
-    this.postMat.uniforms.res.value.set(Math.floor(W / px), Math.floor(H / px));
+    const rw = Math.max(1, Math.floor(W * ratio / px)), rh = Math.max(1, Math.floor(H * ratio / px));
+    this.rt.setSize(rw, rh);
+    this.postMat.uniforms.res.value.set(rw, rh);
     this.aspect = W / H;
   }
 
@@ -457,7 +475,14 @@ export class Renderer {
 
   // ---------- post-processing ----------
   initPost() {
-    this.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true });
+    // half-float render target nepodporujú všetky mobilné GPU -> záloha na 8-bit
+    const ext = this.gl.extensions;
+    const hf = ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float');
+    if (hf) { ext.get('EXT_color_buffer_float'); ext.get('EXT_color_buffer_half_float'); }
+    this.rt = new THREE.WebGLRenderTarget(4, 4, {
+      type: hf ? THREE.HalfFloatType : THREE.UnsignedByteType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter,
+      depthBuffer: true, samples: this.mobile ? 0 : 4,
+    });
     this.postScene = new THREE.Scene();
     this.postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.postMat = new THREE.ShaderMaterial({
@@ -548,6 +573,7 @@ export class Renderer {
     this.postMat.uniforms.dither.value = this.settings.dither ? 1 : 0;
     this.uniforms.uGrid.value = this.settings.grid ? 1 : 0;
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 0.6);
+    if (this.resMode() !== this._mode) this.resize();
     this.updateLighting(dt);
     this.updateCamera(dt);
     this.particles.mesh.material.uniforms.uLight.value = 1 - this.night * 0.78;

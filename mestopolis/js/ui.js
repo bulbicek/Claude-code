@@ -160,10 +160,10 @@ export class UI {
     d.innerHTML = `<div class="title"><span>${title}</span>${opts.noClose ? '' : '<button class="x">✕</button>'}</div><div class="body">${html}</div>`;
     host.appendChild(d);
     const W = window.innerWidth, H = window.innerHeight;
-    d.style.width = (opts.width || 360) + 'px';
+    d.style.width = Math.min(opts.width || 360, W - 12) + 'px';
     const r = d.getBoundingClientRect();
-    d.style.left = (opts.x ?? (W - r.width) / 2) + 'px';
-    d.style.top = (opts.y ?? Math.max(40, (H - r.height) / 2)) + 'px';
+    d.style.left = Math.max(6, Math.min(opts.x ?? (W - r.width) / 2, W - r.width - 6)) + 'px';
+    d.style.top = Math.max(6, opts.y ?? (H - r.height) / 2) + 'px';
     d._close = () => { d.remove(); bg && bg.remove(); opts.onClose && opts.onClose(); };
     const x = d.querySelector('.x'); if (x) x.onclick = d._close;
     // presúvanie okna
@@ -264,7 +264,7 @@ export class UI {
   optionsDialog() {
     const s = this.g.r.settings;
     const d = this.dialog('Možnosti', `
-      <div class="row"><label>Veľkosť pixelu</label><select id="op-px"><option value="1">1 (ostré)</option><option value="2">2 (retro)</option><option value="3">3 (veľmi retro)</option><option value="4">4 (8-bit)</option></select></div>
+      <div class="row"><label>Veľkosť pixelu</label><select id="op-px"><option value="0">Auto (retro zblízka, ostré z diaľky)</option><option value="1">1 (ostré)</option><option value="2">2 (retro)</option><option value="3">3 (veľmi retro)</option><option value="4">4 (8-bit)</option></select></div>
       <div class="row"><label>Dithering a paleta</label><input type="checkbox" id="op-dither" ${s.dither ? 'checked' : ''}></div>
       <div class="row"><label>Mriežka</label><input type="checkbox" id="op-grid" ${s.grid ? 'checked' : ''}> <small>(G)</small></div>
       <div class="row"><label>Tiene</label><input type="checkbox" id="op-sh" ${s.shadows ? 'checked' : ''}></div>
@@ -286,8 +286,8 @@ export class UI {
     this.dialog('Pomoc', `<div class="help">
       <p><b>Cieľ:</b> vybudujte prosperujúce mesto. Vyznačte zóny (bývanie, obchod, priemysel), pripojte ich cestami a elektrinou – budovy vyrastú samé podľa dopytu (ukazovateľ R/C/I hore).</p>
       <p><b>Prvé kroky:</b> 1) elektráreň, 2) cesty, 3) obytné a priemyselné zóny pri cestách, 4) elektrické vedenie k zónam (zóny vedú prúd ďalej), 5) neskôr obchod, voda, polícia, hasiči, školy.</p>
-      <p><b>Myš:</b> ľavé tlačidlo – použiť nástroj (ťahaním cesty, vedenia, zóny); pravé/stredné tlačidlo – posun mapy; koliesko – zoom. Pravý klik na ikonu – posledný nástroj zo skupiny.</p>
-      <p><b>Klávesy:</b> <kbd>WASD</kbd>/šípky posun, <kbd>Q</kbd>/<kbd>E</kbd> otáčanie, <kbd>+</kbd>/<kbd>-</kbd> zoom, <kbd>Medzera</kbd> pauza, <kbd>1</kbd>-<kbd>3</kbd> rýchlosť, <kbd>Esc</kbd> info nástroj, <kbd>B</kbd> buldozér, <kbd>R</kbd> cesta, <kbd>G</kbd> mriežka, <kbd>U</kbd> podzemie (potrubie), <kbd>Ctrl+S</kbd> uložiť.</p>
+      <p><b>Myš:</b> ľavé tlačidlo – použiť nástroj (ťahaním cesty, vedenia, zóny); pravé/stredné tlačidlo – posun mapy (počas ťahania pravé tlačidlo akciu zruší); tlačidlo <b>↶ Späť</b> vráti poslednú stavbu aj s peniazmi; koliesko – zoom. Pravý klik na ikonu – posledný nástroj zo skupiny.</p>
+      <p><b>Klávesy:</b> <kbd>WASD</kbd>/šípky posun, <kbd>Q</kbd>/<kbd>E</kbd> otáčanie, <kbd>+</kbd>/<kbd>-</kbd> zoom, <kbd>Medzera</kbd> pauza, <kbd>1</kbd>-<kbd>3</kbd> rýchlosť, <kbd>Esc</kbd> zrušiť rozpracovanú akciu / info nástroj, <kbd>Ctrl+Z</kbd> späť, <kbd>B</kbd> buldozér, <kbd>R</kbd> cesta, <kbd>G</kbd> mriežka, <kbd>U</kbd> podzemie (potrubie), <kbd>Ctrl+S</kbd> uložiť.</p>
       <p><b>Tipy:</b> hustá zástavba potrebuje vodu (čerpadlá + potrubie), hodnota pozemkov rastie pri vode, parkoch a službách, klesá so znečistením a kriminalitou. Pri veľkom meste treba štadión, letisko a prístav.</p>
     </div><div class="btns"><button class="ok">Zavrieť</button></div>`, { width: 520, id: 'help' }).querySelector('.ok').onclick = function () { this.closest('.win')._close(); };
   }
