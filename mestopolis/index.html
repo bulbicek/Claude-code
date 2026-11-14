@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mestopolis 3D – budovateľská simulácia mesta</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div class="menu">
+      <button data-menu="city">Mesto</button>
+      <button data-menu="budget">Rozpočet</button>
+      <button data-menu="maps">Mapy</button>
+      <button data-menu="graphs">Grafy</button>
+      <button data-menu="disasters">Katastrofy</button>
+      <button data-menu="options">Možnosti</button>
+      <button data-menu="help">?</button>
+    </div>
+    <div class="info">
+      <span id="cityName" class="inset">—</span>
+      <span id="date" class="inset">—</span>
+      <span id="funds" class="inset">—</span>
+      <span id="pop" class="inset">—</span>
+    </div>
+    <div id="rci" class="inset" title="Dopyt: Bývanie / Obchod / Priemysel">
+      <div class="bar"><div class="fill r"></div><label>R</label></div>
+      <div class="bar"><div class="fill c"></div><label>C</label></div>
+      <div class="bar"><div class="fill i"></div><label>I</label></div>
+    </div>
+    <div id="speed">
+      <button data-speed="0" title="Pauza (medzerník)">❚❚</button>
+      <button data-speed="1" title="Pomaly (1)">▶</button>
+      <button data-speed="2" title="Normálne (2)">▶▶</button>
+      <button data-speed="3" title="Rýchlo (3)">▶▶▶</button>
+    </div>
+  </div>
+  <div id="main">
+    <div id="toolbar"></div>
+    <div id="viewport">
+      <canvas id="view"></canvas>
+      <div id="rotate">
+        <button id="rotL" title="Otočiť (Q)">⟲</button>
+        <button id="rotR" title="Otočiť (E)">⟳</button>
+        <button id="zoomIn" title="Priblížiť">+</button>
+        <button id="zoomOut" title="Oddialiť">−</button>
+      </div>
+      <div id="minimapWrap" class="win">
+        <div class="title">Mapa</div>
+        <canvas id="minimap" width="160" height="160"></canvas>
+      </div>
+      <div id="overlayLegend" class="win hidden"></div>
+    </div>
+  </div>
+  <div id="statusbar">
+    <span id="status" class="inset">Vitajte v Mestopolise!</span>
+    <div id="ticker" class="inset"><div id="tickerText"></div></div>
+  </div>
+  <div id="flyout" class="win hidden"></div>
+  <div id="dialogs"></div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
