@@ -7,6 +7,7 @@ import { BUILDINGS, COST, HS, SEA, TOOL_GROUPS, fmtMoney, zoneDense } from './co
 const SPEED_MONTH = [Infinity, 7, 3.2, 1.1]; // sekúnd na mesiac
 const LINE_TOOLS = ['road', 'pline', 'pipe'];
 const RECT_TOOLS = ['bulldoze', 'dezone', 'tree', 'level'];
+const UNDO_ARRAYS = ['zone', 'level', 'pop', 'variant', 'road', 'pline', 'pipe', 'tree', 'bid', 'rubble', 'abandoned', 'fire'];
 
 class Game {
   constructor() {
@@ -57,7 +58,9 @@ class Game {
     this.refreshMaps();
     this.r.cars.refreshRoads(w);
     this.r.particles.clear(); this.r.flames.clear();
+    this.undoStack = []; this.snap = null; this.updateUndoBtn();
     this.tornado = null;
+    this.r.syncWorld(1e9);
     this.ui.updateTop();
     this.ui.drawMinimap();
   }
@@ -76,7 +79,7 @@ class Game {
     } catch (e) { this.ui.pushNews('Uloženie zlyhalo: ' + e.message, 'bad'); }
   }
   load() {
-    const s = localStorage.getItem('mestopolis-save');
+    let s = null; try { s = localStorage.getItem('mestopolis-save'); } catch (e) { }
     if (!s) { this.ui.pushNews('Žiadne uložené mesto.', 'warn'); return; }
     try { this.attach(World.deserialize(s)); this.ui.pushNews(`Mesto ${this.world.state.name} bolo nahraté.`, 'good'); }
     catch (e) { this.ui.pushNews('Nahrávanie zlyhalo: ' + e.message, 'bad'); }
@@ -95,7 +98,7 @@ class Game {
     };
     inp.click();
   }
-  saveSettings() { localStorage.setItem('mestopolis-settings', JSON.stringify({ ...this.r.settings, autosave: this.autosave })); }
+  saveSettings() { try { localStorage.setItem('mestopolis-settings', JSON.stringify({ ...this.r.settings, autosave: this.autosave })); } catch (e) { } }
   loadSettings() {
     try {
       const s = JSON.parse(localStorage.getItem('mestopolis-settings') || '{}');
@@ -114,8 +117,8 @@ class Game {
   }
 
   setTool(t) {
+    if (this.drag) this.cancelDrag();
     this.tool = t;
-    this.drag = null;
     this.ui.markTool(t);
     this.r.setUnderground(t === 'pipe' || this.r.overlay === 'water');
     this.ui.status(this.toolLabel(t));
@@ -173,6 +176,7 @@ class Game {
     c.addEventListener('contextmenu', e => e.preventDefault());
     c.addEventListener('mousedown', e => {
       this.ui.hideFlyout();
+      if ((e.button === 2 || e.button === 1) && this.drag) { this.cancelDrag(); return; }
       if (e.button === 1 || e.button === 2) { this.pan = { x: e.clientX, y: e.clientY, tx: this.r.view.tx, tz: this.r.view.tz }; return; }
       if (e.button !== 0) return;
       const p = this.r.pick(...this.ndc(e));
@@ -205,7 +209,7 @@ class Game {
       this.ui.hideFlyout();
       const ts = e.touches;
       if (ts.length >= 2) {
-        if (this.drag) { this.drag = null; this.updateHighlight(); }
+        if (this.drag) this.cancelDrag();
         const mx = (ts[0].clientX + ts[1].clientX) / 2, my = (ts[0].clientY + ts[1].clientY) / 2;
         touch = { mode: 'pinch', x: mx, y: my, d: Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY), zoom: this.r.view.zoom, tx: this.r.view.tx, tz: this.r.view.tz };
         return;
@@ -263,7 +267,8 @@ class Game {
       if (k === ' ') { e.preventDefault(); this.setSpeed(this.speed === 0 ? (this.prevSpeed || 2) : (this.prevSpeed = this.speed, 0)); }
       if (k === '1' || k === '2' || k === '3') this.setSpeed(+k);
       if (k === '0') this.setSpeed(0);
-      if (k === 'escape') { this.setTool('query'); this.ui.hideFlyout(); }
+      if (k === 'escape') { if (!this.cancelDrag()) { this.setTool('query'); this.ui.hideFlyout(); } }
+      if (k === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); this.undo(); return; }
       if (k === 'b') this.setTool('bulldoze');
       if (k === 'r') this.setTool('road');
       if (k === 'g') { this.r.settings.grid = !this.r.settings.grid; this.saveSettings(); }
@@ -275,6 +280,7 @@ class Game {
     addEventListener('keyup', e => this.keys.delete(e.key.toLowerCase()));
     document.getElementById('rotL').onclick = () => this.rotate(-1);
     document.getElementById('rotR').onclick = () => this.rotate(1);
+    document.getElementById('undoBtn').onclick = () => this.undo();
     document.getElementById('zoomIn').onclick = () => this.r.view.zoom = Math.max(3, this.r.view.zoom / 1.3);
     document.getElementById('zoomOut').onclick = () => this.r.view.zoom = Math.min(this.world.N * 0.6, this.r.view.zoom * 1.3);
     const mm = document.getElementById('minimap');
@@ -396,11 +402,15 @@ class Game {
       const type = t.slice(2), [ox, oy] = this.bOrigin(p);
       const ok = w.canBuilding(type, ox, oy);
       if (!ok.ok) { this.ui.status(ok.reason); return; }
-      if (!this.spend(BUILDINGS[type].cost)) return;
+      if (BUILDINGS[type].cost > w.state.funds) { this.spend(BUILDINGS[type].cost); return; }
+      this.recordStart();
+      this.spend(BUILDINGS[type].cost);
       w.placeBuilding(type, ox, oy);
+      this.recordEnd(BUILDINGS[type].name);
       this.afterEdit();
       return;
     }
+    this.recordStart();
     this.drag = { start: [p.tx, p.ty], cur: [p.tx, p.ty], paint: ['raise', 'lower', 'tree'].includes(t), done: new Set(), level: w.tileMax(p.tx, p.ty) };
     if (t === 'level') { const c = w.corners(p.tx, p.ty); this.drag.level = Math.round((c[0] + c[1] + c[2] + c[3]) / 4); }
     if (this.drag.paint) this.applyPaint(p.tx, p.ty);
@@ -439,6 +449,73 @@ class Game {
   }
 
   endTool() {
+    this._endTool();
+    this.recordEnd(this.toolLabel(this.tool).split(' – ')[0]);
+  }
+
+  // zrušenie rozpracovanej akcie (Esc, pravé tlačidlo počas ťahania, druhý prst)
+  cancelDrag() {
+    if (!this.drag) return false;
+    const painted = this.drag.paint && this.drag.done.size;
+    this.drag = null;
+    if (painted) { this.recordEnd('úprava'); this.undo(true); } else this.snap = null;
+    this.updateHighlight();
+    this.ui.status('Akcia zrušená.');
+    return true;
+  }
+
+  // ---------- späť (undo) ----------
+  recordStart() {
+    const w = this.world;
+    this.snap = { a: {}, h: w.h.slice(), b: new Map(w.buildings), nextId: w.nextId, funds: w.state.funds };
+    for (const k of UNDO_ARRAYS) this.snap.a[k] = w[k].slice();
+  }
+  recordEnd(label) {
+    const s = this.snap, w = this.world; this.snap = null;
+    if (!s) return;
+    const rec = { label, a: {}, h: [], added: [], removed: [], nextId: s.nextId, spent: s.funds - w.state.funds };
+    let any = false;
+    for (const k of UNDO_ARRAYS) {
+      const o = s.a[k], c = w[k], d = [];
+      for (let i = 0; i < c.length; i++) if (o[i] !== c[i]) d.push(i, o[i]);
+      if (d.length) { rec.a[k] = d; any = true; }
+    }
+    for (let i = 0; i < w.h.length; i++) if (s.h[i] !== w.h[i]) { rec.h.push(i, s.h[i]); any = true; }
+    for (const id of w.buildings.keys()) if (!s.b.has(id)) rec.added.push(id);
+    for (const [id, b] of s.b) if (!w.buildings.has(id)) rec.removed.push(b);
+    if (!any && !rec.added.length && !rec.removed.length) return;
+    this.undoStack.push(rec);
+    if (this.undoStack.length > 40) this.undoStack.shift();
+    this.updateUndoBtn();
+  }
+  undo(silent = false) {
+    if (this.drag) { this.cancelDrag(); return; }
+    const rec = this.undoStack.pop(), w = this.world;
+    this.updateUndoBtn();
+    if (!rec) { this.ui.status('Nie je čo vrátiť.'); return; }
+    const N = w.N, W = N + 1, tiles = new Set();
+    for (const k in rec.a) { const d = rec.a[k], arr = w[k]; for (let j = 0; j < d.length; j += 2) { arr[d[j]] = d[j + 1]; tiles.add(d[j]); } }
+    for (let j = 0; j < rec.h.length; j += 2) {
+      const ci = rec.h[j]; w.h[ci] = rec.h[j + 1];
+      const cx = ci % W, cy = (ci / W) | 0;
+      for (let dy = -1; dy <= 0; dy++) for (let dx = -1; dx <= 0; dx++) if (w.inb(cx + dx, cy + dy)) tiles.add(w.ti(cx + dx, cy + dy));
+    }
+    if (rec.h.length) w.terrainDirty = true;
+    for (const id of rec.added) w.buildings.delete(id);
+    for (const b of rec.removed) w.buildings.set(b.id, b);
+    if (rec.added.length && w.nextId === rec.nextId + rec.added.length) w.nextId = rec.nextId;
+    for (const t of tiles) { const x = t % N, y = (t / N) | 0; w.updateWater(x, y); w.markDirty(x, y); }
+    w.state.funds += rec.spent;
+    this.afterEdit();
+    this.updateHighlight();
+    if (!silent) this.ui.status(`Vrátené: ${rec.label}${rec.spent > 0 ? ` (+${fmtMoney(rec.spent)})` : ''}`);
+  }
+  updateUndoBtn() {
+    const b = document.getElementById('undoBtn');
+    if (b) b.disabled = !(this.undoStack && this.undoStack.length);
+  }
+
+  _endTool() {
     const d = this.drag; this.drag = null;
     const w = this.world, t = this.tool;
     if (d.paint) { this.updateHighlight(); return; }
@@ -520,10 +597,27 @@ class Game {
   }
 }
 
-window.game = new Game();
+function showFatal(msg) {
+  let el = document.getElementById('fatal');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'fatal'; el.className = 'win';
+    el.innerHTML = '<div class="title"><span>Chyba</span><button>✕</button></div><div class="body"></div>';
+    el.querySelector('button').onclick = () => el.remove();
+    document.body.appendChild(el);
+  }
+  el.querySelector('.body').textContent = msg;
+}
+addEventListener('error', e => showFatal('Nastala chyba: ' + (e.message || e.error) + (e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : '')));
+addEventListener('unhandledrejection', e => showFatal('Nastala chyba: ' + (e.reason && e.reason.message || e.reason)));
+try { window.game = new Game(); }
+catch (e) {
+  const webgl = (() => { try { return !!document.createElement('canvas').getContext('webgl2'); } catch (_) { return false; } })();
+  showFatal(webgl ? 'Hru sa nepodarilo spustiť: ' + e.message : 'Toto zariadenie alebo prehliadač nepodporuje WebGL 2, ktoré hra potrebuje.');
+  throw e;
+}
 
 // ---- PWA: service worker (offline) ----
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+try { if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('./sw.js').then(reg => {
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;
@@ -532,7 +626,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
       });
     });
   }).catch(e => console.warn('SW:', e));
-}
+} } catch (e) { /* napr. v sandboxe bez service workerov */ }
 let deferredInstall = null;
 addEventListener('beforeinstallprompt', e => {
   e.preventDefault(); deferredInstall = e;
