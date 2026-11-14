@@ -25,7 +25,12 @@ Hra je Progressive Web App: dá sa nainštalovať na plochu (počítač, Android
 - Inštalácia vyžaduje **HTTPS** (alebo `localhost`) – napr. GitHub Pages, Netlify, Cloudflare Pages.
 - Chrome/Edge/Android: tlačidlo **⬇ Inštalovať** v hornej lište alebo ikona inštalácie v adresnom riadku.
 - iPhone/iPad (Safari): Zdieľať → **Pridať na plochu**.
-- Po zmene súborov zvýšte `VERSION` v `sw.js`, aby si nainštalované aplikácie stiahli novú verziu.
+- Po zmene súborov zvýšte `VERSION` v `sw.js`, aby si nainštalované aplikácie stiahli novú verziu (pri nasadení cez GitHub Actions sa to robí automaticky).
+
+### Nasadenie na GitHub Pages
+
+Workflow `.github/workflows/pages.yml` pri každom pushi zmien v `mestopolis/` nasadí hru na GitHub Pages.
+Jednorazové nastavenie v repozitári: **Settings → Pages → Source: GitHub Actions**.
 
 Dotykové ovládanie: 1 prst = nástroj (s info nástrojom posun mapy, ťuk = informácie), 2 prsty = posun a zoom.
 
