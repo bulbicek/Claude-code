@@ -6,7 +6,7 @@ Slovenská idle hra na sídlisku zo 70. rokov (WebGL / Three.js, bez obrázkový
 - `zdroj/rit-versus-panelaky.html` – aktuálny zdroj (verzia 1.6, mapa 20×20). Na mieste `<!--THREEJS-->` sa pri zostavení vkladá Three.js r128.
 - `build/index-web.html` – hotová, samostatná webová verzia (Three.js vložená, dá sa otvoriť priamo v prehliadači).
 - `build/build.py`, `build/prefix.html`, `build/three.min.js` – zostavenie webovej verzie.
-- `apk/` – Android APK 1.6 (versionCode 7) a stabilná 1.2. Podpísané kľúčom `rit-release.jks` (alias `rit`); kľúč tu nie je.
+- `apk/` – Android APK 1.6 (versionCode 7) a stabilná 1.2. Podpísané kľúčom `kluc/rit-release.jks` (alias `rit`, návod v `kluc/README.md`).
 - `zalohy/` – staršie verzie a medzistavy:
   - `rit-1.6-mapa20.html` – mapa 20×20
   - `rit-1.5.2.html` – Riť podľa nákresu, bez tváre
