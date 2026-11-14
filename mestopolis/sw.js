@@ -1,5 +1,5 @@
-// Mestopolis – service worker: hra funguje aj offline
-const VERSION = 'mestopolis-v2';
+// Mestopolis – service worker: online vždy čerstvá verzia, offline z cache
+const VERSION = 'mestopolis-v3';
 const ASSETS = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './js/main.js', './js/config.js', './js/noise.js', './js/world.js', './js/sim.js', './js/geom.js',
@@ -9,20 +9,31 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' obíde HTTP cache prehliadača, aby sa neuložila stará verzia
+  e.waitUntil(caches.open(VERSION)
+    .then(c => Promise.all(ASSETS.map(u => fetch(new Request(u, { cache: 'reload' })).then(r => r.ok && c.put(u, r)))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
-// stale-while-revalidate: rýchlo z cache, na pozadí aktualizácia
+// network-first: najprv sieť (bez HTTP cache), pri výpadku alebo po 6 s cache
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
-  e.respondWith(caches.open(VERSION).then(async cache => {
-    const cached = await cache.match(req, { ignoreSearch: true });
-    const net = fetch(req).then(res => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => cached);
-    return cached || net;
-  }));
+  e.respondWith((async () => {
+    const cache = await caches.open(VERSION);
+    try {
+      const net = fetch(req, { cache: 'no-cache' });
+      const res = await Promise.race([net, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000))]);
+      if (res.ok) cache.put(req, res.clone());
+      return res;
+    } catch (err) {
+      const cached = await cache.match(req, { ignoreSearch: true }) || (req.mode === 'navigate' && await cache.match('./index.html'));
+      if (cached) return cached;
+      throw err;
+    }
+  })());
 });
