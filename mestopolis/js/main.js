@@ -197,6 +197,58 @@ class Game {
       if (this.pan && (e.button === 1 || e.button === 2)) { this.pan = null; return; }
       if (e.button === 0 && this.drag) this.endTool();
     });
+    // ---- dotykové ovládanie: 1 prst = nástroj (pri info nástroji posun), 2 prsty = posun + zoom ----
+    const tpos = t => ({ clientX: t.clientX, clientY: t.clientY });
+    let touch = null;
+    c.addEventListener('touchstart', e => {
+      e.preventDefault();
+      this.ui.hideFlyout();
+      const ts = e.touches;
+      if (ts.length >= 2) {
+        if (this.drag) { this.drag = null; this.updateHighlight(); }
+        const mx = (ts[0].clientX + ts[1].clientX) / 2, my = (ts[0].clientY + ts[1].clientY) / 2;
+        touch = { mode: 'pinch', x: mx, y: my, d: Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY), zoom: this.r.view.zoom, tx: this.r.view.tx, tz: this.r.view.tz };
+        return;
+      }
+      const t = tpos(ts[0]);
+      const p = this.r.pick(...this.ndc(t));
+      if (this.tool === 'query') { touch = { mode: 'pan', x: t.clientX, y: t.clientY, tx: this.r.view.tx, tz: this.r.view.tz, moved: false, p }; return; }
+      touch = { mode: 'tool' };
+      this.onHover(p);
+      if (p && !p.outside) this.startTool(p);
+    }, { passive: false });
+    c.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (!touch) return;
+      const ts = e.touches, v = this.r.view;
+      const panBy = (sx, sy, x, y, tx, tz) => {
+        const s = (v.zoom * 2) / this.canvas.clientHeight, { right, fwd } = this.r.screenAxes();
+        const dx = (x - sx) * s, dy = (y - sy) * s / Math.sin(v.el);
+        v.tx = tx - right[0] * dx + fwd[0] * dy; v.tz = tz - right[1] * dx + fwd[1] * dy;
+        this.clampView();
+      };
+      if (touch.mode === 'pinch' && ts.length >= 2) {
+        const mx = (ts[0].clientX + ts[1].clientX) / 2, my = (ts[0].clientY + ts[1].clientY) / 2;
+        const d = Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+        v.zoom = Math.max(3, Math.min(this.world.N * 0.6, touch.zoom * touch.d / Math.max(10, d)));
+        panBy(touch.x, touch.y, mx, my, touch.tx, touch.tz);
+      } else if (touch.mode === 'pan') {
+        const t = ts[0];
+        if (Math.hypot(t.clientX - touch.x, t.clientY - touch.y) > 8) touch.moved = true;
+        if (touch.moved) panBy(touch.x, touch.y, t.clientX, t.clientY, touch.tx, touch.tz);
+      } else if (touch.mode === 'tool') {
+        this.onHover(this.r.pick(...this.ndc(tpos(ts[0]))));
+      }
+    }, { passive: false });
+    c.addEventListener('touchend', e => {
+      e.preventDefault();
+      if (!touch) return;
+      if (e.touches.length > 0) return;
+      if (touch.mode === 'pan' && !touch.moved && touch.p && !touch.p.outside) this.startTool(touch.p);
+      if (touch.mode === 'tool' && this.drag) this.endTool();
+      touch = null;
+    }, { passive: false });
+
     c.addEventListener('wheel', e => {
       e.preventDefault();
       const v = this.r.view;
@@ -469,3 +521,23 @@ class Game {
 }
 
 window.game = new Game();
+
+// ---- PWA: service worker (offline) ----
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('./sw.js').then(reg => {
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      nw && nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) window.game.ui.pushNews('Je dostupná nová verzia hry – obnovte stránku.', 'good');
+      });
+    });
+  }).catch(e => console.warn('SW:', e));
+}
+let deferredInstall = null;
+addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredInstall = e;
+  const b = document.getElementById('installBtn');
+  b.classList.remove('hidden');
+  b.onclick = async () => { b.classList.add('hidden'); deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; };
+});
+addEventListener('appinstalled', () => document.getElementById('installBtn').classList.add('hidden'));

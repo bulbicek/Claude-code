@@ -2,7 +2,16 @@
 <html lang="sk">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#00007a">
+<meta name="description" content="Retro 3D budovateľská simulácia mesta">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mestopolis">
 <title>Mestopolis 3D – budovateľská simulácia mesta</title>
 <link rel="stylesheet" href="style.css">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
@@ -18,6 +27,7 @@
       <button data-menu="disasters">Katastrofy</button>
       <button data-menu="options">Možnosti</button>
       <button data-menu="help">?</button>
+      <button id="installBtn" class="hidden" title="Nainštalovať ako aplikáciu">⬇ Inštalovať</button>
     </div>
     <div class="info">
       <span id="cityName" class="inset">—</span>

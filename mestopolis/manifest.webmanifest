@@ -1,0 +1,22 @@
+{
+  "name": "Mestopolis 3D",
+  "short_name": "Mestopolis",
+  "description": "Retro 3D budovateľská simulácia mesta",
+  "lang": "sk",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#000000",
+  "theme_color": "#00007a",
+  "categories": ["games", "simulation"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "docs/screenshot.png", "sizes": "1280x800", "type": "image/png", "form_factor": "wide", "label": "Mestopolis 3D" }
+  ]
+}

@@ -18,6 +18,17 @@ python3 -m http.server 8000
 
 Nie sú potrebné žiadne závislosti – Three.js je pribalené vo `vendor/`.
 
+## PWA (inštalovateľná aplikácia)
+
+Hra je Progressive Web App: dá sa nainštalovať na plochu (počítač, Android, iPhone/iPad) a funguje **offline**.
+
+- Inštalácia vyžaduje **HTTPS** (alebo `localhost`) – napr. GitHub Pages, Netlify, Cloudflare Pages.
+- Chrome/Edge/Android: tlačidlo **⬇ Inštalovať** v hornej lište alebo ikona inštalácie v adresnom riadku.
+- iPhone/iPad (Safari): Zdieľať → **Pridať na plochu**.
+- Po zmene súborov zvýšte `VERSION` v `sw.js`, aby si nainštalované aplikácie stiahli novú verziu.
+
+Dotykové ovládanie: 1 prst = nástroj (s info nástrojom posun mapy, ťuk = informácie), 2 prsty = posun a zoom.
+
 ## Hrateľnosť
 
 - **Terén**: mapy 96–256 polí, kopce v terasách, more, rieky, jazerá, lesy; terraformovanie (zdvihnúť / znížiť / vyrovnať).

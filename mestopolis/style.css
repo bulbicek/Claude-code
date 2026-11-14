@@ -1,5 +1,5 @@
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font: bold 12px "Tahoma", "Verdana", "Segoe UI", sans-serif; color: #000; user-select: none; }
+html, body { overscroll-behavior: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; margin: 0; height: 100%; overflow: hidden; background: #000; font: bold 12px "Tahoma", "Verdana", "Segoe UI", sans-serif; color: #000; user-select: none; }
 #app { display: flex; flex-direction: column; height: 100%; }
 button { font: inherit; }
 .pix { image-rendering: pixelated; display: block; }
@@ -16,7 +16,7 @@ button:disabled { color: #888; text-shadow: 1px 1px #fff; cursor: default; }
 #topbar .menu button { border-color: transparent; box-shadow: none; background: transparent; }
 #topbar .menu button:hover { border-color: #fff #5a5a5a #5a5a5a #fff; }
 #topbar .info { display: flex; gap: 4px; flex: 1; }
-#topbar .info span { min-width: 80px; text-align: center; font-family: "Courier New", monospace; font-size: 13px; }
+#topbar .info span { white-space: nowrap; min-width: 80px; text-align: center; font-family: "Courier New", monospace; font-size: 13px; }
 #cityName { color: #00007a; }
 #funds.neg { color: #c00; }
 
@@ -34,7 +34,7 @@ button:disabled { color: #888; text-shadow: 1px 1px #fff; cursor: default; }
 #toolbar button { width: 28px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center; position: relative; }
 #toolbar button.sub::after { content: ''; position: absolute; right: 1px; bottom: 1px; border: 3px solid transparent; border-right-color: #000; border-bottom-color: #000; }
 #viewport { flex: 1; position: relative; min-width: 0; }
-#view { width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: crosshair; }
+#view { touch-action: none; width: 100%; height: 100%; display: block; image-rendering: pixelated; cursor: crosshair; }
 #rotate { position: absolute; top: 8px; right: 8px; display: flex; gap: 2px; }
 #rotate button { width: 28px; height: 26px; padding: 0; font-size: 15px; }
 #minimapWrap { position: absolute; right: 8px; bottom: 8px; padding: 2px; }
@@ -78,3 +78,11 @@ input[type=text], input[type=number], select { font: inherit; border: 2px solid;
 .help p { margin: 4px 0; font-weight: normal; }
 .help kbd { background: #fff; border: 1px solid #555; padding: 0 3px; font-family: monospace; }
 .logo { font: bold 26px "Courier New", monospace; color: #00007a; text-shadow: 2px 2px #8af; letter-spacing: 2px; }
+#app { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+#installBtn { color: #00007a; }
+@media (max-width: 760px), (max-height: 520px) {
+  #topbar .info span { min-width: 0; font-size: 11px; }
+  #status { width: 160px; }
+  #minimap, #minimapWrap canvas { width: 110px; height: 110px; }
+  #topbar .menu button { padding: 3px 4px; }
+}
