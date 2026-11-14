@@ -31,7 +31,9 @@ jobs:
           cp -r mestopolis/. _site/
           # nová verzia cache pre každé nasadenie -> nainštalované PWA sa aktualizujú
           sed -i "s/const VERSION = '[^']*';/const VERSION = 'mestopolis-${GITHUB_SHA::8}';/" _site/sw.js
+          sed -i "s/<meta name=\"app-version\" content=\"[^\"]*\">/<meta name=\"app-version\" content=\"${GITHUB_SHA::8}\">/" _site/index.html
           grep -n "const VERSION" _site/sw.js
+          grep -n "app-version" _site/index.html
           touch _site/.nojekyll
 
       - uses: actions/configure-pages@v5

@@ -598,17 +598,8 @@ class Game {
 }
 
 function showFatal(msg) {
-  let el = document.getElementById('fatal');
-  if (!el) {
-    el = document.createElement('div'); el.id = 'fatal'; el.className = 'win';
-    el.innerHTML = '<div class="title"><span>Chyba</span><button>✕</button></div><div class="body"></div>';
-    el.querySelector('button').onclick = () => el.remove();
-    document.body.appendChild(el);
-  }
-  el.querySelector('.body').textContent = msg;
+  if (window.__bootError) window.__bootError(msg); else alert(msg);
 }
-addEventListener('error', e => showFatal('Nastala chyba: ' + (e.message || e.error) + (e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : '')));
-addEventListener('unhandledrejection', e => showFatal('Nastala chyba: ' + (e.reason && e.reason.message || e.reason)));
 try { window.game = new Game(); }
 catch (e) {
   const webgl = (() => { try { return !!document.createElement('canvas').getContext('webgl2'); } catch (_) { return false; } })();

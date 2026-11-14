@@ -289,6 +289,7 @@ export class UI {
       <p><b>Myš:</b> ľavé tlačidlo – použiť nástroj (ťahaním cesty, vedenia, zóny); pravé/stredné tlačidlo – posun mapy (počas ťahania pravé tlačidlo akciu zruší); tlačidlo <b>↶ Späť</b> vráti poslednú stavbu aj s peniazmi; koliesko – zoom. Pravý klik na ikonu – posledný nástroj zo skupiny.</p>
       <p><b>Klávesy:</b> <kbd>WASD</kbd>/šípky posun, <kbd>Q</kbd>/<kbd>E</kbd> otáčanie, <kbd>+</kbd>/<kbd>-</kbd> zoom, <kbd>Medzera</kbd> pauza, <kbd>1</kbd>-<kbd>3</kbd> rýchlosť, <kbd>Esc</kbd> zrušiť rozpracovanú akciu / info nástroj, <kbd>Ctrl+Z</kbd> späť, <kbd>B</kbd> buldozér, <kbd>R</kbd> cesta, <kbd>G</kbd> mriežka, <kbd>U</kbd> podzemie (potrubie), <kbd>Ctrl+S</kbd> uložiť.</p>
       <p><b>Tipy:</b> hustá zástavba potrebuje vodu (čerpadlá + potrubie), hodnota pozemkov rastie pri vode, parkoch a službách, klesá so znečistením a kriminalitou. Pri veľkom meste treba štadión, letisko a prístav.</p>
+      <p style="color:#555">Verzia: ${(document.querySelector('meta[name=app-version]') || {}).content || '?'} · <a href="?reset">vymazať cache a načítať znova</a></p>
     </div><div class="btns"><button class="ok">Zavrieť</button></div>`, { width: 520, id: 'help' }).querySelector('.ok').onclick = function () { this.closest('.win')._close(); };
   }
 
