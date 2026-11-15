@@ -30,3 +30,30 @@
     invoke-virtual {v0, v1}, Lsk/ritvspanelaky/MainActivity;->applyImmersive(Z)V
     return-void
 .end method
+
+.method public topInset()I
+    .registers 5
+    .annotation runtime Landroid/webkit/JavascriptInterface;
+    .end annotation
+    iget-object v0, p0, Lsk/ritvspanelaky/Bridge;->act:Lsk/ritvspanelaky/MainActivity;
+    invoke-virtual {v0}, Lsk/ritvspanelaky/MainActivity;->getResources()Landroid/content/res/Resources;
+    move-result-object v0
+    const-string v1, "status_bar_height"
+    const-string v2, "dimen"
+    const-string v3, "android"
+    invoke-virtual {v0, v1, v2, v3}, Landroid/content/res/Resources;->getIdentifier(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I
+    move-result v1
+    if-eqz v1, :zero
+    invoke-virtual {v0, v1}, Landroid/content/res/Resources;->getDimensionPixelSize(I)I
+    move-result v1
+    invoke-virtual {v0}, Landroid/content/res/Resources;->getDisplayMetrics()Landroid/util/DisplayMetrics;
+    move-result-object v2
+    iget v2, v2, Landroid/util/DisplayMetrics;->density:F
+    int-to-float v1, v1
+    div-float/2addr v1, v2
+    float-to-int v1, v1
+    return v1
+    :zero
+    const/4 v1, 0x0
+    return v1
+.end method

@@ -41,17 +41,17 @@ canvas{display:block;touch-action:none}
 #world{cursor:grab;position:absolute;inset:0}
 
 /* ---- HUD over the sky ---- */
-.hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-top:10px;padding-left:max(12px, env(safe-area-inset-left,0px));padding-right:max(12px, env(safe-area-inset-right,0px));pointer-events:none}
+.hud{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-top:calc(10px + var(--sat, env(safe-area-inset-top,0px)));padding-left:max(12px, env(safe-area-inset-left,0px));padding-right:max(12px, env(safe-area-inset-right,0px));pointer-events:none}
 .ess{background:var(--display);border-radius:6px;padding:6px 10px 5px;box-shadow:0 0 0 2px #8d9196,0 0 0 3px #4b4e52,0 3px 8px rgba(0,0,0,.4);font-family:var(--f-num);font-size:24px;line-height:1;color:var(--amber);text-shadow:0 0 10px rgba(255,170,40,.55);font-variant-numeric:tabular-nums;min-width:96px}
 .ess small{display:block;font-family:var(--f-sign);font-weight:600;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#c9c3b4;text-shadow:none;margin-top:3px}
 .era{text-align:center;background:var(--enamel);color:#fff;border-radius:5px;padding:5px 10px 6px;box-shadow:inset 0 0 0 2px #fff,inset 0 0 0 3px var(--enamel),0 3px 8px rgba(0,0,0,.35);min-width:118px}
 .era b{display:block;font:700 15px/1.1 var(--f-sign);letter-spacing:.06em;text-transform:uppercase}
 .era span{display:block;font:600 12px/1.25 var(--f-sign);letter-spacing:.04em;opacity:.9}
 .era .clk{margin-top:2px;padding-top:2px;border-top:1px solid rgba(255,255,255,.35);font-variant-numeric:tabular-nums}
-.hint{position:absolute;left:12px;top:78px;font:500 12px/1.3 var(--f-sign);color:var(--ink);background:var(--paper);padding:7px 10px;border-radius:2px;pointer-events:none;max-width:min(210px,calc(100% - 150px));box-shadow:0 2px 6px rgba(0,0,0,.35);transform:rotate(-1.2deg);transition:opacity .6s}
+.hint{position:absolute;left:12px;top:calc(78px + var(--sat, env(safe-area-inset-top,0px)));font:500 12px/1.3 var(--f-sign);color:var(--ink);background:var(--paper);padding:7px 10px;border-radius:2px;pointer-events:none;max-width:min(210px,calc(100% - 150px));box-shadow:0 2px 6px rgba(0,0,0,.35);transform:rotate(-1.2deg);transition:opacity .6s}
 .hint::before{content:"";position:absolute;top:-6px;left:50%;width:46px;height:13px;margin-left:-23px;background:rgba(230,220,180,.75);transform:rotate(2deg)}
 .clean .logo,.clean .hud,.clean #toast,.clean #hint,.clean #panel,.clean .camctl>button:not(#cleanBtn){display:none!important}
-.clean .camctl{background:none;box-shadow:none;padding:0;top:max(10px, env(safe-area-inset-top,0px));bottom:auto}
+.clean .camctl{background:none;box-shadow:none;padding:0;top:calc(10px + var(--sat, env(safe-area-inset-top,0px)));bottom:auto}
 .clean #cleanBtn{opacity:.4}
 .camctl{position:absolute;right:max(10px, env(safe-area-inset-right,0px));bottom:10px;display:flex;gap:5px;padding:5px;background:linear-gradient(#cfd2d5,#9a9ea3);border-radius:8px;box-shadow:inset 0 1px 0 #fff,0 3px 8px rgba(0,0,0,.4)}
 .camctl button{font:400 14px var(--f-num);height:32px;min-width:32px;padding:0 8px;border-radius:50%;border:0;background:var(--display);color:#8a857a;cursor:pointer;box-shadow:0 0 0 2px #6d7176,inset 0 2px 3px rgba(0,0,0,.6)}
@@ -1536,6 +1536,7 @@ cv.addEventListener('pointerup',endPtr);cv.addEventListener('pointercancel',endP
 cv.addEventListener('wheel',ev=>{ev.preventDefault();cam.idle=0;const r=cv.getBoundingClientRect(),mx=ev.clientX-r.left,my=ev.clientY-r.top;
   camPrep();const wf=planeAt(mx,my,0);cam.zoom=clamp(cam.zoom*Math.exp(-ev.deltaY*.0018),.7,4.5);if(cam.follow)setFollow(false);camAnchor(wf,mx,my)},{passive:false});
 let CLEAN=false;
+try{if(window.RitApp&&RitApp.topInset)document.documentElement.style.setProperty('--sat',RitApp.topInset()+'px')}catch(e){}
 function setClean(on){CLEAN=on;document.body.classList.toggle('clean',on);$('#cleanBtn').setAttribute('aria-pressed',on);$('#cleanBtn').title=on?'Zobraziť ovládanie':'Iba hra';
   // hide the phone's status and navigation bars too: the Android app has a bridge, a browser uses fullscreen
   try{if(window.RitApp&&RitApp.setImmersive)RitApp.setImmersive(on);

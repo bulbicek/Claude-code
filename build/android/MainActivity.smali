@@ -43,6 +43,15 @@
     invoke-virtual {v1, v3}, Landroid/view/Window;->setAttributes(Landroid/view/WindowManager$LayoutParams;)V
     :nocut
     invoke-virtual {p0, v0}, Lsk/ritvspanelaky/MainActivity;->setContentView(Landroid/view/View;)V
+    invoke-virtual {p0}, Lsk/ritvspanelaky/MainActivity;->getWindow()Landroid/view/Window;
+    move-result-object v1
+    const/high16 v3, 0x4000000
+    invoke-virtual {v1, v3}, Landroid/view/Window;->clearFlags(I)V
+    const/high16 v3, -0x80000000
+    invoke-virtual {v1, v3}, Landroid/view/Window;->addFlags(I)V
+    const/4 v3, 0x0
+    invoke-virtual {v1, v3}, Landroid/view/Window;->setStatusBarColor(I)V
+    invoke-virtual {p0, v3}, Lsk/ritvspanelaky/MainActivity;->applyImmersive(Z)V
     const-string v1, "file:///android_asset/index.html"
     invoke-virtual {v0, v1}, Landroid/webkit/WebView;->loadUrl(Ljava/lang/String;)V
     return-void
@@ -100,7 +109,7 @@
     move-result-object v0
     invoke-virtual {v0}, Landroid/view/Window;->getDecorView()Landroid/view/View;
     move-result-object v0
-    const/4 v1, 0x0
+    const/16 v1, 0x500
     if-eqz p1, :set
     const/16 v1, 0x1706
     :set
