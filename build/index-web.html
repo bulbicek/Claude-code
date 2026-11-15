@@ -1546,6 +1546,10 @@ cv.addEventListener('wheel',ev=>{ev.preventDefault();cam.idle=0;const r=cv.getBo
   camPrep();const wf=planeAt(mx,my,0);cam.zoom=clamp(cam.zoom*Math.exp(-ev.deltaY*.0018),.7,4.5);if(cam.follow)setFollow(false);camAnchor(wf,mx,my)},{passive:false});
 let CLEAN=false;
 function setClean(on){CLEAN=on;document.body.classList.toggle('clean',on);$('#cleanBtn').setAttribute('aria-pressed',on);$('#cleanBtn').title=on?'Zobraziť ovládanie':'Iba hra';
+  // hide the phone's status and navigation bars too: the Android app has a bridge, a browser uses fullscreen
+  try{if(window.RitApp&&RitApp.setImmersive)RitApp.setImmersive(on);
+    else if(on&&document.fullscreenEnabled&&!document.fullscreenElement)document.documentElement.requestFullscreen({navigationUI:'hide'}).catch(()=>{});
+    else if(!on&&document.fullscreenElement)document.exitFullscreen().catch(()=>{})}catch(e){}
   try{localStorage.setItem('rit-clean',on?'1':'0')}catch(e){}requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')))}
 $('#cleanBtn').addEventListener('click',()=>{setClean(!CLEAN);SFX.click()});
 try{if(localStorage.getItem('rit-clean')==='1')setTimeout(()=>setClean(true),0)}catch(e){}

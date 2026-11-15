@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="sk.ritvspanelaky" android:versionCode="3" android:versionName="1.2">
+    <application android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:allowBackup="true" android:hardwareAccelerated="true" android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <activity android:name="sk.ritvspanelaky.MainActivity" android:exported="true" android:screenOrientation="portrait" android:launchMode="singleTask" android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
