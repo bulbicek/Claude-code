@@ -5,11 +5,13 @@ const TILE_ARRAYS = {
   water: Uint8Array, zone: Uint8Array, level: Uint8Array, pop: Uint16Array, variant: Uint8Array,
   road: Uint8Array, pline: Uint8Array, pipe: Uint8Array, tree: Uint8Array, bid: Int32Array,
   fire: Uint8Array, rubble: Uint8Array, powered: Uint8Array, watered: Uint8Array, abandoned: Uint8Array,
-  noPow: Uint8Array, roadAcc: Uint8Array,
+  noPow: Uint8Array, roadAcc: Uint8Array, cons: Uint8Array, consTot: Uint8Array, consFrom: Uint8Array,
   lv: Uint8Array, poll: Uint8Array, crime: Uint8Array, traffic: Uint8Array,
   police: Uint8Array, fireCov: Uint8Array, health: Uint8Array, edu: Uint8Array, park: Uint8Array,
 };
-const SAVE_ARRAYS = ['zone', 'level', 'pop', 'variant', 'road', 'pline', 'pipe', 'tree', 'bid', 'rubble', 'abandoned', 'fire'];
+const SAVE_ARRAYS = ['zone', 'level', 'pop', 'variant', 'road', 'pline', 'pipe', 'tree', 'bid', 'rubble', 'abandoned', 'fire', 'cons', 'consTot', 'consFrom'];
+// trvanie výstavby budov (v rýchlych krokoch simulácie) podľa veľkosti
+const B_CONS = { 1: 5, 2: 7, 3: 10, 4: 14, 6: 18 };
 
 export class World {
   constructor(N) {
@@ -74,6 +76,8 @@ export class World {
     if (ly === CHUNK - 1 && cy < this.chunksN - 1) this.dirtyChunks.add((cy + 1) * this.chunksN + cx);
     this.terrainColorDirty = true;
   }
+  // len prekreslenie bloku (bez prefarbenia terénu) – pre animáciu stavenísk
+  markChunk(x, y) { this.dirtyChunks.add(Math.floor(y / CHUNK) * this.chunksN + Math.floor(x / CHUNK)); }
   markAllDirty() {
     for (let i = 0; i < this.chunksN * this.chunksN; i++) this.dirtyChunks.add(i);
     this.terrainDirty = true; this.terrainColorDirty = true;
@@ -235,7 +239,7 @@ export class World {
   // ---------- stavanie ----------
   isEmpty(i) { return !this.road[i] && !this.pline[i] && !this.bid[i]; }
 
-  clearForBuild(i) { this.tree[i] = 0; this.rubble[i] = 0; this.zone[i] = 0; this.level[i] = 0; this.pop[i] = 0; this.abandoned[i] = 0; this.fire[i] = 0; }
+  clearForBuild(i) { this.tree[i] = 0; this.rubble[i] = 0; this.zone[i] = 0; this.level[i] = 0; this.pop[i] = 0; this.abandoned[i] = 0; this.fire[i] = 0; this.cons[i] = 0; this.consFrom[i] = 0; }
 
   canRoad(x, y) {
     if (!this.inb(x, y)) return false;
@@ -300,7 +304,9 @@ export class World {
   }
   placeBuilding(type, x, y) {
     const def = BUILDINGS[type], s = def.size, id = this.nextId++;
-    const b = { id, type, x, y, size: s, powered: 0, watered: 0, age: 0 };
+    const park = def.cat === 'park';
+    const b = { id, type, x, y, size: s, powered: 0, watered: 0, age: 0, cons: park ? 0 : (B_CONS[s] || 8) };
+    b.consTot = b.cons;
     this.buildings.set(id, b);
     for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) {
       const i = this.ti(x + dx, y + dy);
@@ -326,11 +332,11 @@ export class World {
     if (dezoneOnly) {
       if (!this.zone[i]) return 0;
       const c = this.level[i] > 0 ? 5 : 1;
-      this.zone[i] = 0; this.level[i] = 0; this.pop[i] = 0; this.abandoned[i] = 0; this.markDirty(x, y);
+      this.zone[i] = 0; this.level[i] = 0; this.pop[i] = 0; this.abandoned[i] = 0; this.cons[i] = 0; this.markDirty(x, y);
       return c;
     }
     if (this.bid[i]) { this.removeBuilding(this.bid[i]); return 10; }
-    if (this.level[i] > 0) { this.level[i] = 0; this.pop[i] = 0; this.abandoned[i] = 0; this.zone[i] = 0; this.fire[i] = 0; this.markDirty(x, y); return 5; }
+    if (this.level[i] > 0) { this.level[i] = 0; this.pop[i] = 0; this.abandoned[i] = 0; this.zone[i] = 0; this.fire[i] = 0; this.cons[i] = 0; this.markDirty(x, y); return 5; }
     if (this.road[i] || this.pline[i]) { const c = this.water[i] ? 5 : 1; this.road[i] = 0; this.pline[i] = 0; this.markDirty(x, y); return c; }
     if (this.rubble[i] || this.tree[i]) { this.rubble[i] = 0; this.tree[i] = 0; this.markDirty(x, y); return 1; }
     if (this.zone[i]) { this.zone[i] = 0; this.markDirty(x, y); return 1; }

@@ -2,6 +2,9 @@ import { BUILDINGS, POP, zoneKind, zoneDense, powerUse, waterUse, SEA, MILESTONE
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
+// trvanie výstavby podľa úrovne zástavby (v rýchlych krokoch)
+const CONS_T = [0, 6, 8, 10, 13, 16];
+
 export class Sim {
   constructor(world, hooks) {
     this.w = world;
@@ -106,14 +109,14 @@ export class Sim {
       i => w.zone[i] > 0 || w.pline[i] || w.bid[i] > 0,
       b => {
         const d = BUILDINGS[b.type];
-        if (!d.power) return 0;
+        if (!d.power || b.cons > 0) return 0;
         let p = d.power;
         if (b.type === 'wind') p *= 0.6 + 0.4 * Math.min(1, (w.tileMax(b.x, b.y) - SEA) / 8);
         if (b.type === 'hydro') p *= 1;
         if (b.type === 'solar') p *= 0.85;
         return p;
       },
-      i => (w.level[i] > 0 && !w.abandoned[i] ? powerUse(w.level[i]) : w.bid[i] ? 0.25 : 0.02),
+      i => (w.cons[i] > 0 ? 0.05 : w.level[i] > 0 && !w.abandoned[i] ? powerUse(w.level[i]) : w.bid[i] ? 0.25 : 0.02),
       w.powered
     );
     w.state.stats.powerSupply = r.supply; w.state.stats.powerDemand = r.demand;
@@ -126,7 +129,7 @@ export class Sim {
       i => w.pipe[i] || w.zone[i] > 0 || w.bid[i] > 0,
       b => {
         const d = BUILDINGS[b.type];
-        if (!d.water || !b.powered) return 0;
+        if (!d.water || !b.powered || b.cons > 0) return 0;
         let v = d.water;
         if (b.type === 'pump') v *= this.waterDist[w.ti(b.x, b.y)] <= 1 ? 1.8 : 1;
         return v;
@@ -154,6 +157,7 @@ export class Sim {
     };
     for (const b of w.buildings.values()) {
       const d = BUILDINGS[b.type];
+      if (b.cons > 0) continue;
       const cx = b.x + b.size / 2, cy = b.y + b.size / 2;
       const pf = b.powered ? 1 : 0.5;
       if (d.radius && d.fund) {
@@ -330,7 +334,7 @@ export class Sim {
     const dem = [0, st.demand.R, st.demand.C, st.demand.I];
     for (let i = 0; i < N * N; i++) {
       const z = w.zone[i];
-      if (!z || w.fire[i]) continue;
+      if (!z || w.fire[i] || w.cons[i] > 0) continue;
       const k = zoneKind(z), dense = zoneDense(z);
       let L = w.level[i];
       const x = i % N, y = (i / N) | 0;
@@ -365,13 +369,16 @@ export class Sim {
         // vyššie úrovne potrebujú vyššiu hodnotu pozemku
         const need = [0, 0, 30, 70, 105, 140][L + 1] * (k === 3 ? 0.12 : 1);
         if (w.lv[i] >= need || L === 0) {
+          const oldL = L;
           L++; w.level[i] = L; w.rubble[i] = 0; w.variant[i] = (Math.random() * 256) | 0; w.tree[i] = 0;
+          // stavenisko: nová výstavba alebo prerábka existujúcej budovy
+          w.cons[i] = w.consTot[i] = CONS_T[L]; w.consFrom[i] = oldL;
           w.markDirty(x, y);
         }
       } else if (L > 1 && score < -0.3 && Math.random() < -score * 0.25) {
         L--; w.level[i] = L; w.markDirty(x, y);
       } else if (L > maxL) { L = maxL; w.level[i] = L; w.markDirty(x, y); }
-      w.pop[i] = Math.round(POP[k][L] * (0.85 + (w.variant[i] / 255) * 0.3));
+      if (!(w.cons[i] > 0)) w.pop[i] = Math.round(POP[k][L] * (0.85 + (w.variant[i] / 255) * 0.3));
     }
   }
 
@@ -452,8 +459,33 @@ export class Sim {
   }
 
   // ================= rýchly krok (požiare, ...) =================
+  // postup výstavby: volá sa z rýchleho kroku (kým hra beží)
+  tickConstruction() {
+    const w = this.w, N = w.N;
+    const stage = (c, t) => Math.floor((1 - c / (t || 8)) * 5);
+    for (let i = 0; i < N * N; i++) {
+      const c = w.cons[i];
+      if (!c) continue;
+      const t = w.consTot[i] || 8, before = stage(c, t);
+      w.cons[i] = c - 1;
+      const x = i % N, y = (i / N) | 0;
+      if (c - 1 === 0) {
+        const k = zoneKind(w.zone[i]), L = w.level[i];
+        if (k && L > 0 && !w.abandoned[i]) w.pop[i] = Math.round(POP[k][L] * (0.85 + (w.variant[i] / 255) * 0.3));
+        w.consFrom[i] = 0; w.markChunk(x, y);
+      } else if (stage(c - 1, t) !== before) w.markChunk(x, y);
+    }
+    for (const b of w.buildings.values()) {
+      if (!(b.cons > 0)) continue;
+      const t = b.consTot || 8, before = stage(b.cons, t);
+      b.cons--;
+      if (b.cons === 0 || stage(b.cons, t) !== before) w.markChunk(b.x, b.y);
+    }
+  }
+
   fastTick() {
     const w = this.w, N = w.N;
+    this.tickConstruction();
     let burning = 0;
     const toIgnite = [];
     for (let i = 0; i < N * N; i++) {

@@ -268,6 +268,7 @@ export class UI {
       <div class="row"><label>Dithering a paleta</label><input type="checkbox" id="op-dither" ${s.dither ? 'checked' : ''}></div>
       <div class="row"><label>Mriežka</label><input type="checkbox" id="op-grid" ${s.grid ? 'checked' : ''}> <small>(G)</small></div>
       <div class="row"><label>Tiene</label><input type="checkbox" id="op-sh" ${s.shadows ? 'checked' : ''}></div>
+      <div class="row"><label>Efekty (bloom, miniatúra)</label><input type="checkbox" id="op-fx" ${s.fx !== false ? 'checked' : ''}></div>
       <div class="row"><label>Denná doba</label><select id="op-time"><option value="cycle">Striedanie dňa a noci</option><option value="day">Stále deň</option><option value="night">Stále noc</option></select></div>
       <div class="row"><label>Automatické ukladanie</label><input type="checkbox" id="op-auto" ${this.g.autosave ? 'checked' : ''}></div>
       <div class="btns"><button class="ok">OK</button></div>`, { width: 360, id: 'options' });
@@ -277,6 +278,7 @@ export class UI {
     q('#op-dither').onchange = () => { s.dither = q('#op-dither').checked; this.g.saveSettings(); };
     q('#op-grid').onchange = () => { s.grid = q('#op-grid').checked; this.g.saveSettings(); };
     q('#op-sh').onchange = () => { s.shadows = q('#op-sh').checked; this.g.saveSettings(); };
+    q('#op-fx').onchange = () => { s.fx = q('#op-fx').checked; this.g.saveSettings(); };
     q('#op-time').onchange = () => { s.timeMode = q('#op-time').value; this.g.saveSettings(); };
     q('#op-auto').onchange = () => { this.g.autosave = q('#op-auto').checked; this.g.saveSettings(); };
     q('.ok').onclick = d._close;
@@ -307,6 +309,8 @@ export class UI {
     else if (w.pline[i]) what = 'Elektrické vedenie';
     else if (w.rubble[i]) what = 'Trosky';
     else if (w.tree[i]) what = 'Les';
+    if (w.cons[i] > 0 && w.level[i] > 0) what += w.consFrom[i] ? ' – prerábka' : ' – vo výstavbe';
+    if (w.bid[i] && (w.buildings.get(w.bid[i]) || {}).cons > 0) what += ' – vo výstavbe';
     const k = zoneKind(w.zone[i]);
     let extra = '';
     if (w.bid[i]) {

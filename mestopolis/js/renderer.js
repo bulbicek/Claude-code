@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { HS, SEA, CHUNK, MAX_H, zoneKind, zoneDense } from './config.js';
-import { GB, glowMaterial, col, mix, shade } from './geom.js';
+import { GB, glowMaterial, col, mix, shade, NOISE_GLSL, CLOUD_GLSL } from './geom.js';
+import * as ZG from './zonegeo.js';
 import * as BG from './buildgeo.js';
 import { hash2 } from './noise.js';
 
@@ -14,12 +15,14 @@ export class Renderer {
     const r = this.gl = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true });
     r.setPixelRatio(1);
     r.shadowMap.enabled = true;
+    r.shadowMap.autoUpdate = false;   // tiene sa prekresľujú len pri zmene scény alebo pohybe slnka
+    this.shadowAcc = 99;
     r.shadowMap.type = THREE.PCFShadowMap;
     r.outputColorSpace = THREE.LinearSRGBColorSpace;
     this.scene = new THREE.Scene();
-    this.uniforms = { uNight: { value: 0 }, uTime: { value: 0 }, uGrid: { value: 0 } };
+    this.uniforms = { uNight: { value: 0 }, uTime: { value: 0 }, uGrid: { value: 0 }, uCloud: { value: 0 } };
     this.mobile = matchMedia('(pointer: coarse)').matches;
-    this.settings = { pixel: 0, dither: true, grid: false, timeMode: 'cycle', shadows: true };
+    this.settings = { pixel: 0, dither: true, grid: false, timeMode: 'cycle', shadows: true, fx: true };
     this.overlay = null;
     this.underground = false;
     this.tod = 0.38;
@@ -63,6 +66,7 @@ export class Renderer {
     this.flames = new Particles(700, true);
     this.scene.add(this.particles.mesh, this.flames.mesh);
     this.cars = new Cars(this.scene, this.uniforms);
+    this.boats = new Boats(this.scene, this.particles);
     this.icons = new PowerIcons(this.scene);
     this.tornadoObj = null;
     this.shake = 0;
@@ -72,30 +76,67 @@ export class Renderer {
   makeTerrainMaterial() {
     const m = new THREE.MeshLambertMaterial({ vertexColors: true });
     m.onBeforeCompile = sh => {
-      sh.uniforms.uGrid = this.uniforms.uGrid;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed,1.0)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;\nuniform float uGrid;')
+      sh.uniforms.uGrid = this.uniforms.uGrid; sh.uniforms.uTime = this.uniforms.uTime; sh.uniforms.uCloud = this.uniforms.uCloud;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;\nvarying vec3 vWN;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed,1.0)).xyz;\nvWN = normalize(mat3(modelMatrix) * normal);');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;\nvarying vec3 vWN;\nuniform float uGrid, uTime, uCloud;\n' + NOISE_GLSL + CLOUD_GLSL)
         .replace('#include <color_fragment>', `#include <color_fragment>
+          // detail povrchu: jemný šum, zvetraná skala na svahoch, tiene oblakov
+          float n1 = vnoise(vWP.xz * 2.2), n2 = vnoise(vWP.xz * 9.0), n3 = vnoise(vWP.xz * 28.0);
+          diffuseColor.rgb *= 0.88 + 0.12 * n1 + 0.08 * n2 + 0.05 * n3;
+          float slope = 1.0 - clamp(vWN.y, 0.0, 1.0);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 0.75, 0.7), smoothstep(0.1, 0.5, slope));
+          diffuseColor.rgb *= 1.0 - 0.24 * uCloud * cloudShade(vWP.xz, uTime);
           vec2 fw = fract(vWP.xz); vec2 gd = min(fw, 1.0 - fw);
           float e = min(gd.x, gd.y);
           diffuseColor.rgb *= mix(1.0, mix(0.72, 1.0, smoothstep(0.0, 0.035, e)), uGrid);`);
     };
     return m;
   }
+  // voda: hĺbkové sfarbenie, pena pri brehu, vlnky a odlesk slnka
   makeWaterMaterial() {
-    const m = new THREE.MeshLambertMaterial({ color: 0x2c6cb2, transparent: true, opacity: 0.82 });
-    m.onBeforeCompile = sh => {
-      sh.uniforms.uTime = this.uniforms.uTime;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed,1.0)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP;\nuniform float uTime;')
-        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-          vec2 q = floor(vWP.xz * 4.0) / 4.0;
-          vec3 wn = vec3(sin(q.x * 2.1 + uTime * 1.3) * 0.16 + sin(q.y*1.3 - uTime)*0.08, 1.0, cos(q.y * 2.4 + uTime * 1.1) * 0.16);
-          normal = normalize((viewMatrix * vec4(normalize(wn), 0.0)).xyz);`);
+    const u = this.uniforms;
+    this.waterU = {
+      uTime: u.uTime, uNight: u.uNight, uCloud: u.uCloud, uDepth: { value: null }, uN: { value: 128 },
+      uSunDir: { value: new THREE.Vector3(0.5, 0.8, 0.3) }, uSunCol: { value: new THREE.Color(1, 1, 1) },
+      uLight: { value: new THREE.Color(1, 1, 1) }, uSky: { value: new THREE.Color(0x7fb0e8) },
+      uDeep: { value: new THREE.Color(0x1b4f8c) }, uShallow: { value: new THREE.Color(0x4cc0c8) },
     };
-    return m;
+    return new THREE.ShaderMaterial({
+      uniforms: this.waterU, transparent: true, depthWrite: false,
+      vertexShader: `varying vec3 vWP; void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vWP = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }`,
+      fragmentShader: `
+        uniform float uTime, uN, uNight, uCloud; uniform sampler2D uDepth;
+        uniform vec3 uSunDir, uSunCol, uLight, uSky, uDeep, uShallow; varying vec3 vWP;
+        ${NOISE_GLSL}${CLOUD_GLSL}
+        void main(){
+          vec2 uv = (vWP.xz + 0.5) / (uN + 1.0);
+          float raw = (texture2D(uDepth, uv).r * 255.0 - 128.0) / 20.0;   // hĺbka v úrovniach terénu
+          float d = raw + 0.5;                                          // breh je pri d ≈ 0.2
+          vec2 p = vWP.xz; float t = uTime;
+          vec2 q1 = p * 1.7 + vec2(t * 0.30, t * 0.17), q2 = p * 4.3 - vec2(t * 0.22, -t * 0.28);
+          float e = 0.07;
+          float h0 = vnoise(q1) * 0.6 + vnoise(q2) * 0.4;
+          float hx = vnoise(q1 + vec2(e, 0.0)) * 0.6 + vnoise(q2 + vec2(e, 0.0)) * 0.4;
+          float hz = vnoise(q1 + vec2(0.0, e)) * 0.6 + vnoise(q2 + vec2(0.0, e)) * 0.4;
+          vec3 n = normalize(vec3(-(hx - h0) * 1.7, 1.0, -(hz - h0) * 1.7));
+          vec3 V = normalize(cameraPosition - vWP);
+          float fres = pow(1.0 - clamp(dot(n, V), 0.0, 1.0), 3.0);
+          float dd = clamp(raw / 2.2, 0.0, 1.0);
+          vec3 col = mix(uShallow, uDeep, smoothstep(0.0, 1.0, dd)) * uLight;
+          col = mix(col, uSky * uLight, 0.10 + fres * 0.5);
+          vec3 R = reflect(-uSunDir, n);
+          col += uSunCol * pow(max(dot(R, V), 0.0), 80.0) * 1.3;
+          float fn = vnoise(p * 6.0 + vec2(t * 0.4, -t * 0.3));
+          float edge = smoothstep(0.5, 0.15, d + (fn - 0.5) * 0.3);
+          float wave = 0.5 + 0.5 * sin(d * 10.0 - t * 1.7 + fn * 4.0);
+          float foam = clamp(edge * (0.5 + 0.5 * wave), 0.0, 1.0);
+          col = mix(col, vec3(0.96, 0.98, 1.0) * uLight, foam * 0.85);
+          col *= 1.0 - 0.2 * uCloud * cloudShade(p, t);
+          float alpha = clamp(mix(0.55, 0.93, smoothstep(0.0, 1.0, dd)) + foam * 0.35, 0.0, 0.97);
+          gl_FragColor = vec4(col, alpha);
+        }`,
+    });
   }
 
   // ---------- svet ----------
@@ -125,7 +166,7 @@ export class Renderer {
     sc.updateProjectionMatrix();
     this.view.tx = N / 2; this.view.tz = N / 2;
     this.view.zoom = 14;
-    this.cars.reset();
+    this.cars.reset(); this.boats.reset();
     world.markAllDirty();
   }
 
@@ -158,6 +199,22 @@ export class Renderer {
     this.terrain.geometry.attributes.normal.needsUpdate = true;
     this.terrain.geometry.computeBoundingSphere();
     this.buildWaterAndSkirt();
+    this.updateDepthTexture();
+    this.boats.refresh(this.world);
+  }
+
+  updateDepthTexture() {
+    const w = this.world, N = w.N, W = N + 1;
+    const data = new Uint8Array(W * W);
+    for (let cy = 0; cy < W; cy++) for (let cx = 0; cx < W; cx++) data[cy * W + cx] = Math.max(0, Math.min(255, 128 + (SEA - w.ch(cx, cy)) * 20));
+    if (!this.depthTex || this.depthTex.image.width !== W) {
+      this.depthTex = new THREE.DataTexture(data, W, W, THREE.RedFormat, THREE.UnsignedByteType);
+      this.depthTex.minFilter = this.depthTex.magFilter = THREE.LinearFilter;
+      this.depthTex.wrapS = this.depthTex.wrapT = THREE.ClampToEdgeWrapping;
+      this.depthTex.unpackAlignment = 1; this.depthTex.generateMipmaps = false;
+    } else this.depthTex.image.data.set(data);
+    this.depthTex.needsUpdate = true;
+    this.waterU.uDepth.value = this.depthTex; this.waterU.uN.value = N;
   }
 
   buildWaterAndSkirt() {
@@ -319,10 +376,10 @@ export class Renderer {
       if (w.pipe[i]) BG.pipe(gp, w, x, y);
       if (w.bid[i]) {
         const b = w.buildings.get(w.bid[i]);
-        if (b && b.x === x && b.y === y) BG.serviceBuilding(gb, w, b, emit);
+        if (b && b.x === x && b.y === y) { if (b.cons > 0) ZG.buildingSite(gb, w, b, emit, BG.plinth); else BG.serviceBuilding(gb, w, b, emit); }
         continue;
       }
-      if (w.level[i] > 0 && w.zone[i]) { BG.zoneBuilding(gb, w, x, y, emit); continue; }
+      if (w.level[i] > 0 && w.zone[i]) { if (w.cons[i] > 0) ZG.construction(gb, w, x, y, emit); else ZG.zoneBuilding(gb, w, x, y, emit); continue; }
       if (w.rubble[i]) BG.rubble(gb, w, x, y, x * 911 + y);
       if (w.tree[i] && !w.road[i]) BG.trees(gb, w, x, y, w.tree[i], x * 7331 + y * 17 + 1);
     }
@@ -344,9 +401,10 @@ export class Renderer {
 
   syncWorld(maxChunks = 8) {
     const w = this.world;
-    if (w.terrainDirty) { this.rebuildTerrainGeometry(); w.terrainDirty = false; }
+    if (w.terrainDirty) { this.rebuildTerrainGeometry(); w.terrainDirty = false; this.shadowDirty = true; }
     if (w.terrainColorDirty) { this.updateTerrainColors(); w.terrainColorDirty = false; }
     const t0 = performance.now();
+    if (w.dirtyChunks.size) this.shadowDirty = true;
     for (const ci of w.dirtyChunks) {
       this.buildChunk(ci);
       w.dirtyChunks.delete(ci);
@@ -489,11 +547,11 @@ export class Renderer {
       uniforms: {
         tDiffuse: { value: this.rt.texture }, res: { value: new THREE.Vector2(4, 4) },
         dither: { value: 1 }, levels: { value: 28 }, skyTop: { value: new THREE.Color() }, skyBot: { value: new THREE.Color() },
-        night: { value: 0 }, exposure: { value: 1.0 }, time: { value: 0 },
+        night: { value: 0 }, exposure: { value: 1.0 }, time: { value: 0 }, tilt: { value: 0 }, bloom: { value: 0.5 }, vig: { value: 0.28 },
       },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
       fragmentShader: `
-        uniform sampler2D tDiffuse; uniform vec2 res; uniform float dither, levels, night, exposure, time;
+        uniform sampler2D tDiffuse; uniform vec2 res; uniform float dither, levels, night, exposure, time, tilt, bloom, vig;
         uniform vec3 skyTop, skyBot; varying vec2 vUv;
         float bayer(vec2 p){
           int x = int(mod(p.x, 4.0)), y = int(mod(p.y, 4.0));
@@ -504,18 +562,43 @@ export class Renderer {
         }
         float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
         vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+        vec4 S(vec2 uv){ return texture2D(tDiffuse, uv); }
         void main(){
-          vec4 c = texture2D(tDiffuse, vUv);
+          vec2 px = 1.0 / res;
+          vec4 c = S(vUv);
+          // miniatúrny (tilt-shift) efekt: pri oddialení sa hore a dole rozostrí
+          float tamt = smoothstep(0.2, 0.52, abs(vUv.y - 0.5)) * tilt;
+          if (tamt > 0.02) {
+            float rad = tamt * 5.0; vec4 acc = c;
+            for (int k = 0; k < 8; k++) { float a = float(k) * 0.7853982 + 0.3; acc += S(vUv + vec2(cos(a), sin(a)) * rad * px * (mod(float(k), 2.0) < 0.5 ? 1.0 : 0.55)); }
+            c = acc / 9.0;
+          }
+          vec3 rgb = c.rgb;
+          // bloom: veľmi jasné (HDR) body – nočné okná, lampy, odlesky na vode – žiaria do okolia
+          if (bloom > 0.01) {
+            vec3 b = vec3(0.0); float R = max(1.0, res.y / 300.0);
+            for (int k = 0; k < 12; k++) {
+              float a = float(k) * 2.399963, rr = sqrt((float(k) + 0.5) / 12.0) * 6.5 * R;
+              b += max(min(S(vUv + vec2(cos(a), sin(a)) * rr * px).rgb, vec3(3.0)) - vec3(1.35), vec3(0.0));
+            }
+            rgb += b / 12.0 * bloom * 1.8;
+          }
           vec2 pix = floor(vUv * res);
           vec3 bg = mix(skyBot, skyTop, smoothstep(0.0, 1.0, vUv.y));
           float st = step(0.997, hash(pix)) * night * (0.5 + 0.5 * sin(time * 2.0 + hash(pix + 3.0) * 30.0));
           bg += vec3(st);
-          vec3 col = mix(bg, c.rgb, clamp(c.a, 0.0, 1.0));
+          vec3 col = mix(bg, rgb, clamp(c.a, 0.0, 1.0));
           col = aces(col * exposure);
+          // farebné ladenie: živšie farby a jemný S-kontrast
+          float lum = dot(col, vec3(0.299, 0.587, 0.114));
+          col = mix(vec3(lum), col, 1.07);
+          col = clamp(mix(col, col * col * (3.0 - 2.0 * col), 0.25), 0.0, 1.0);
           col = pow(col, vec3(1.0/2.2));
+          vec2 vc = (vUv - 0.5) * vec2(res.x / res.y, 1.0);
+          col *= 1.0 - vig * smoothstep(0.5, 1.3, length(vc));
           if (dither > 0.5) {
-            float b = bayer(pix) - 0.5;
-            col += b / levels;
+            float b2 = bayer(pix) - 0.5;
+            col += b2 / levels;
             col = floor(col * levels + 0.5) / levels;
           }
           gl_FragColor = vec4(col, 1.0);
@@ -558,6 +641,12 @@ export class Renderer {
     this.hemi.intensity = lerp(0.55, 0.85, day);
     this.amb.intensity = lerp(0.12, 0.18, day);
     this.uniforms.uNight.value = night;
+    this.uniforms.uCloud.value = day * 0.9;
+    const wu = this.waterU;
+    wu.uSunDir.value.copy(dir);
+    wu.uSunCol.value.copy(this.sun.color).multiplyScalar(Math.min(1, this.sun.intensity * 0.35));
+    wu.uLight.value.copy(lerpC(new THREE.Color(0.06, 0.08, 0.18), new THREE.Color(1.0, 0.98, 0.94), day)).lerp(new THREE.Color(1.0, 0.7, 0.5), dusk * 0.3);
+    wu.uSky.value.copy(lerpC(new THREE.Color(0x0a1230), new THREE.Color(0x86b4ea), day));
     const top = lerpC(lerpC(new THREE.Color(0x03050c), new THREE.Color(0x3d6fc0), day), new THREE.Color(0x3a3a7a), dusk * 0.6);
     const bot = lerpC(lerpC(new THREE.Color(0x10162c), new THREE.Color(0xbcd7ef), day), new THREE.Color(0xf09a5a), dusk * 0.7);
     this.postMat.uniforms.skyTop.value.copy(top);
@@ -570,12 +659,18 @@ export class Renderer {
   render(dt, time) {
     this.uniforms.uTime.value = time;
     this.postMat.uniforms.time.value = time;
-    this.postMat.uniforms.dither.value = this.settings.dither ? 1 : 0;
+    this.postMat.uniforms.dither.value = this.settings.dither && this._mode !== 'far' ? 1 : 0;
+    const zm = this.view.zoom;
+    const fx = this.settings.fx !== false;
+    this.postMat.uniforms.tilt.value = fx ? smoothstep(11, 38, zm) * 0.85 : 0;
+    this.postMat.uniforms.bloom.value = fx ? lerp(0.5, 0.9, this.night || 0) : 0;
     this.uniforms.uGrid.value = this.settings.grid ? 1 : 0;
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 0.6);
     if (this.resMode() !== this._mode) this.resize();
     this.updateLighting(dt);
     this.updateCamera(dt);
+    this.shadowAcc += dt;
+    if (this.shadowDirty || this.shadowAcc > 0.5) { this.gl.shadowMap.needsUpdate = true; this.shadowAcc = 0; this.shadowDirty = false; }
     this.particles.mesh.material.uniforms.uLight.value = 1 - this.night * 0.78;
     this.particles.update(dt, this.cam);
     this.flames.update(dt, this.cam);
@@ -688,7 +783,7 @@ class Cars {
     const top = new THREE.BoxGeometry(0.09, 0.04, 0.075); top.translate(-0.01, 0.095, 0);
     const merged = mergeBoxes([g, top]);
     this.mesh = new THREE.InstancedMesh(merged, new THREE.MeshLambertMaterial(), this.max);
-    this.mesh.castShadow = true;
+    this.mesh.castShadow = false;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.frustumCulled = false;
     const lg = new THREE.BoxGeometry(0.02, 0.025, 0.08); lg.translate(0.09, 0.05, 0);
@@ -818,5 +913,66 @@ class PowerIcons {
         s.visible = true;
       } else s.visible = false;
     }
+  }
+}
+
+// ---------- lode na vode ----------
+class Boats {
+  constructor(scene, particles) {
+    this.max = 36;
+    this.particles = particles;
+    const hull = new THREE.BoxGeometry(0.34, 0.05, 0.11); hull.translate(0, 0.03, 0);
+    const cab = new THREE.BoxGeometry(0.1, 0.06, 0.08); cab.translate(-0.05, 0.085, 0);
+    const bow = new THREE.BoxGeometry(0.08, 0.04, 0.08); bow.translate(0.19, 0.025, 0);
+    this.mesh = new THREE.InstancedMesh(mergeBoxes([hull, cab, bow]), new THREE.MeshLambertMaterial(), this.max);
+    this.mesh.castShadow = false; this.mesh.frustumCulled = false; this.mesh.count = 0;
+    const pal = [0xf2f2ee, 0xc8352b, 0x2f5fa8, 0xe0a224, 0x3d8a4a, 0x2b2b2b];
+    for (let i = 0; i < this.max; i++) this.mesh.setColorAt(i, new THREE.Color(pal[i % pal.length]));
+    scene.add(this.mesh);
+    this.list = []; this.cells = []; this.m = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.p = new THREE.Vector3(); this.sc = new THREE.Vector3(1, 1, 1);
+    this.up = new THREE.Vector3(0, 1, 0); this.t = 0;
+  }
+  reset() { this.list = []; this.mesh.count = 0; }
+  refresh(w) {
+    const N = w.N; this.cells = [];
+    for (let y = 2; y < N - 2; y += 1) for (let x = 2; x < N - 2; x += 1) {
+      let ok = true;
+      for (let dy = -2; dy <= 2 && ok; dy++) for (let dx = -2; dx <= 2; dx++) if (!w.water[w.ti(x + dx, y + dy)]) { ok = false; break; }
+      if (ok) this.cells.push(y * N + x);
+    }
+  }
+  free(w, x, z) {
+    const tx = Math.floor(x), tz = Math.floor(z);
+    if (!w.inb(tx, tz)) return false;
+    const i = w.ti(tx, tz);
+    return w.water[i] && !w.road[i] && !w.bid[i];
+  }
+  update(dt, w) {
+    if (!w) return;
+    const N = w.N, target = Math.min(this.max, Math.floor(this.cells.length / 260));
+    this.t += dt;
+    while (this.list.length < target && this.cells.length) {
+      const c = this.cells[Math.floor(Math.random() * this.cells.length)];
+      this.list.push({ x: (c % N) + 0.5, z: ((c / N) | 0) + 0.5, a: Math.random() * Math.PI * 2, v: 0.35 + Math.random() * 0.35, wake: 0, ph: Math.random() * 6, stuck: 0 });
+    }
+    if (this.list.length > target) this.list.length = target;
+    const wl = SEA * HS + 0.1;
+    let n = 0;
+    for (const b of this.list) {
+      const nx = b.x + Math.cos(b.a) * b.v * dt, nz = b.z + Math.sin(b.a) * b.v * dt;
+      const ax = nx + Math.cos(b.a) * 0.35, az = nz + Math.sin(b.a) * 0.35;
+      if (this.free(w, nx, nz) && this.free(w, ax, az)) { b.x = nx; b.z = nz; b.stuck = 0; }
+      else { b.a += (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 1.6); b.stuck++; if (b.stuck > 12) { b.dead = true; } }
+      b.wake -= dt;
+      if (b.wake <= 0 && this.particles) { b.wake = 0.12; this.particles.spawn(b.x - Math.cos(b.a) * 0.2, wl + 0.02, b.z - Math.sin(b.a) * 0.2, 0, 0.01, 0, 0.03, 0.11, 1.4, [1, 1, 1], 0.55); }
+      this.p.set(b.x, wl + 0.015 + Math.sin(this.t * 2 + b.ph) * 0.006, b.z);
+      this.q.setFromAxisAngle(this.up, -b.a);
+      this.m.compose(this.p, this.q, this.sc);
+      this.mesh.setMatrixAt(n++, this.m);
+    }
+    this.list = this.list.filter(b => !b.dead);
+    this.mesh.count = Math.min(n, this.list.length + 0 === n ? n : n);
+    this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 }

@@ -7,7 +7,7 @@ import { BUILDINGS, COST, HS, SEA, TOOL_GROUPS, fmtMoney, zoneDense } from './co
 const SPEED_MONTH = [Infinity, 7, 3.2, 1.1]; // sekúnd na mesiac
 const LINE_TOOLS = ['road', 'pline', 'pipe'];
 const RECT_TOOLS = ['bulldoze', 'dezone', 'tree', 'level'];
-const UNDO_ARRAYS = ['zone', 'level', 'pop', 'variant', 'road', 'pline', 'pipe', 'tree', 'bid', 'rubble', 'abandoned', 'fire'];
+const UNDO_ARRAYS = ['zone', 'level', 'pop', 'variant', 'road', 'pline', 'pipe', 'tree', 'bid', 'rubble', 'abandoned', 'fire', 'cons', 'consTot', 'consFrom'];
 
 class Game {
   constructor() {
@@ -589,6 +589,7 @@ class Game {
     this.r.spawnEffects(dt * (this.speed ? 1 : 0), this.sim, sf);
     const target = Math.round(Math.min(650, this.r.cars.roadTiles.length * 0.12 + (this.sim.totalTraffic || 0) / 260));
     this.r.cars.update(dt * sf, w, target, this.r.night, 1);
+    this.r.boats.update(dt * sf, w);
     this.r.icons.update(w, time, this.r.view.zoom);
     this.r.render(dt, time);
     this.miniAcc += dt;
