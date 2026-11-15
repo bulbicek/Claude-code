@@ -659,9 +659,10 @@ export function construction(gb, w, x, y, emit) {
   const cx = x + 0.5, cz = y + 0.5;
   if (mx !== mn) gb.box(cx, mn * HS - 0.02, cz, 0.94, B - mn * HS + 0.03, 0.94, C.concrete);
   let H, ww, dd, fh, wall;
-  if (k === 3) { H = 0.3 + L * 0.14; ww = 0.76; dd = 0.66; fh = 0.2; wall = INDW[v % INDW.length]; }
-  else if (L <= 2) { H = L === 1 ? 0.3 : 0.5; ww = L === 1 ? 0.5 : 0.64; dd = L === 1 ? 0.4 : 0.52; fh = 0.2; wall = (k === 1 ? WALLS_R : COMW)[v % 8]; }
-  else { H = S.floors * FLOOR; ww = 0.72; dd = 0.68; fh = FLOOR; wall = (k === 1 ? APT : TOWER)[v % 6]; }
+  const palPick = a => a[v % a.length];   // vždy platný index (palety majú rôznu dĺžku)
+  if (k === 3) { H = 0.3 + L * 0.14; ww = 0.76; dd = 0.66; fh = 0.2; wall = palPick(INDW); }
+  else if (L <= 2) { H = L === 1 ? 0.3 : 0.5; ww = L === 1 ? 0.5 : 0.64; dd = L === 1 ? 0.4 : 0.52; fh = 0.2; wall = palPick(k === 1 ? WALLS_R : COMW); }
+  else { H = S.floors * FLOOR; ww = 0.72; dd = 0.68; fh = FLOOR; wall = palPick(k === 1 ? APT : TOWER); }
   siteCore(gb, r, { cx, cz, B, ww, dd, H, fh, stage, wall, from: w.consFrom[i] ? OLD_H[k][w.consFrom[i]] : 0, emit, crane: H > 0.55, segs: 3 });
 }
 

@@ -553,7 +553,20 @@ class Game {
   }
 
   // ---------- slučka ----------
+  // jedna chyba v kroku nesmie zastaviť celú hru: slučka beží ďalej a chyba sa len ohlási
   frame(t) {
+    try { this.step(t); } catch (e) { this.frameError(e); }
+    requestAnimationFrame(tt => this.frame(tt));
+  }
+
+  frameError(e) {
+    this.errCount = (this.errCount || 0) + 1;
+    console.warn('Chyba v hernom kroku:', e);
+    const msg = String(e && e.message || e).slice(0, 80);
+    if (this.errCount <= 3 || this.lastErr !== msg) { this.lastErr = msg; if (this.errCount <= 6) this.ui.pushNews('Chyba v hre (hra beží ďalej): ' + msg, 'bad'); }
+  }
+
+  step(t) {
     const dt = Math.min(0.1, (t - this.last) / 1000);
     this.last = t;
     const time = t / 1000;
@@ -568,7 +581,8 @@ class Game {
       if (K.has('s') || K.has('arrowdown')) { if (!K.has('control')) { v.tx -= fwd[0] * sp; v.tz -= fwd[1] * sp; } }
       this.clampView();
     }
-    // simulácia
+    // simulácia (chyba v nej neruší kreslenie)
+    try {
     if (this.speed > 0) {
       this.monthAcc += dt;
       if (this.monthAcc >= SPEED_MONTH[this.speed]) {
@@ -583,6 +597,7 @@ class Game {
       if (this.r.settings.timeMode === 'cycle') this.r.tod = (this.r.tod + dt / 150 * [0, 0.7, 1, 2][this.speed]) % 1;
       this.updateTornado(dt);
     }
+    } catch (e) { this.monthAcc = 0; this.fastAcc = 0; this.frameError(e); }
     w.state.dayFrac = this.monthAcc / SPEED_MONTH[this.speed || 2];
     this.r.syncWorld(this.speed === 0 ? 14 : 7);
     const sf = [0, 0.6, 1, 1.6][this.speed];
@@ -594,7 +609,6 @@ class Game {
     this.r.render(dt, time);
     this.miniAcc += dt;
     if (this.miniAcc > 1) { this.miniAcc = 0; this.ui.drawMinimap(); }
-    requestAnimationFrame(tt => this.frame(tt));
   }
 }
 

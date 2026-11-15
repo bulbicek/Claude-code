@@ -371,6 +371,7 @@ export class Renderer {
     const emit = [];
     for (let y = cy0; y < Math.min(cy0 + CHUNK, w.N); y++) for (let x = cx0; x < Math.min(cx0 + CHUNK, w.N); x++) {
       const i = w.ti(x, y);
+      try {
       if (w.road[i]) BG.road(gb, w, x, y);
       if (w.pline[i]) BG.powerline(gb, w, x, y);
       if (w.pipe[i]) BG.pipe(gp, w, x, y);
@@ -382,6 +383,11 @@ export class Renderer {
       if (w.level[i] > 0 && w.zone[i]) { if (w.cons[i] > 0) ZG.construction(gb, w, x, y, emit); else ZG.zoneBuilding(gb, w, x, y, emit); continue; }
       if (w.rubble[i]) BG.rubble(gb, w, x, y, x * 911 + y);
       if (w.tree[i] && !w.road[i]) BG.trees(gb, w, x, y, w.tree[i], x * 7331 + y * 17 + 1);
+      } catch (err) {
+        // chybné políčko sa preskočí; hra beží ďalej
+        this.tileErrors = (this.tileErrors || 0) + 1;
+        if (this.tileErrors <= 3) console.warn('Chyba pri kreslení políčka', x, y, err && err.message);
+      }
     }
     let c = this.chunks.get(ci);
     if (!c) { c = {}; this.chunks.set(ci, c); }
