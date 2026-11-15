@@ -2492,8 +2492,12 @@ function drawCorpse(o){const t=o.t,k=Math.min(1,t/.6);
   cx.globalAlpha=t>2.2?Math.max(0,1-(t-2.2)/.8):1;
   drawModel(cx,o.x,o.y,o.z,o.hd,1.55,parts,{sq:[1+k*.25,1+k*.25,fl],ko:false});cx.globalAlpha=1}
 // big boss bar for Riť
+// the boss bar sits just under the info boards, wherever they ended up (status bar, notch, font size)
+let HUDB=80,hudM=0;
+function measureHud(){try{const st=$('#stage').getBoundingClientRect();let b=0;for(const el of document.querySelectorAll('.hud>div')){const r=el.getBoundingClientRect();if(r.height)b=Math.max(b,r.bottom)}if(b)HUDB=b-st.top+8}catch(e){}}
 function drawBossBar(){const e=E.find(x=>x.butt);if(!e)return;
-  const w=Math.min(W-40,280),x=(W-w)/2,y=80+(e.hurtT>0?(rnd()-.5)*3:0),f=clamp(e.hp/e.mhp,0,1);
+  if(hudM--<=0){measureHud();hudM=30}
+  const w=Math.min(W-40,280),x=(W-w)/2,y=HUDB+(e.hurtT>0?(rnd()-.5)*3:0),f=clamp(e.hp/e.mhp,0,1);
   cx.fillStyle='rgba(20,10,14,.82)';cx.fillRect(x-4,y-4,w+8,30);
   cx.fillStyle='#3a1a22';cx.fillRect(x,y+12,w,10);
   const g=cx.createLinearGradient(x,0,x+w,0);g.addColorStop(0,'#ff5a86');g.addColorStop(1,'#ffb08a');cx.fillStyle=g;cx.fillRect(x,y+12,w*f,10);
