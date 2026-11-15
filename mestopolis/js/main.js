@@ -608,7 +608,8 @@ catch (e) {
 }
 
 // ---- PWA: service worker (offline) ----
-try { if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+const IN_APP = /MestopolisApp/.test(navigator.userAgent); // beží v Android aplikácii (APK)
+try { if ('serviceWorker' in navigator && location.protocol !== 'file:' && !IN_APP) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;
