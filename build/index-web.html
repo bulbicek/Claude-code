@@ -53,6 +53,9 @@ canvas{display:block;touch-action:none}
 .era .clk{margin-top:2px;padding-top:2px;border-top:1px solid rgba(255,255,255,.35);font-variant-numeric:tabular-nums}
 .hint{position:absolute;left:12px;top:78px;font:500 12px/1.3 var(--f-sign);color:var(--ink);background:var(--paper);padding:7px 10px;border-radius:2px;pointer-events:none;max-width:min(210px,calc(100% - 150px));box-shadow:0 2px 6px rgba(0,0,0,.35);transform:rotate(-1.2deg);transition:opacity .6s}
 .hint::before{content:"";position:absolute;top:-6px;left:50%;width:46px;height:13px;margin-left:-23px;background:rgba(230,220,180,.75);transform:rotate(2deg)}
+.clean .logo,.clean .hud,.clean #toast,.clean #hint,.clean #panel,.clean .camctl>button:not(#cleanBtn){display:none!important}
+.clean .camctl{background:none;box-shadow:none;padding:0;top:max(10px, env(safe-area-inset-top,0px));bottom:auto}
+.clean #cleanBtn{opacity:.4}
 .camctl{position:absolute;right:max(10px, env(safe-area-inset-right,0px));bottom:10px;display:flex;gap:5px;padding:5px;background:linear-gradient(#cfd2d5,#9a9ea3);border-radius:8px;box-shadow:inset 0 1px 0 #fff,0 3px 8px rgba(0,0,0,.4)}
 .camctl button{font:400 14px var(--f-num);height:32px;min-width:32px;padding:0 8px;border-radius:50%;border:0;background:var(--display);color:#8a857a;cursor:pointer;box-shadow:0 0 0 2px #6d7176,inset 0 2px 3px rgba(0,0,0,.6)}
 #camFollow{border-radius:16px;font:700 13px var(--f-sign);letter-spacing:.06em;text-transform:uppercase}
@@ -223,6 +226,7 @@ h4 span{font:700 12px var(--f-sign);letter-spacing:.04em;color:#062826;backgroun
       <button id="camR" aria-label="Otočiť doprava">⟳</button>
       <button id="camOut" aria-label="Oddialiť">−</button>
       <button id="camIn" aria-label="Priblížiť">+</button>
+      <button id="cleanBtn" aria-pressed="false" aria-label="Skryť všetko okrem hry" title="Iba hra"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg></button>
     </div>
   </div>
   <div id="panel">
@@ -1158,6 +1162,7 @@ function glDraw(){
   glLabels();
 }
 function glLabels(){
+  if(CLEAN)return;
   cx.textAlign='center';
   for(const c of S.cre){if(c.x==null||c.ghost>0)continue;const S_=.74*(1+Math.min(.3,c.lvl*.008)),p=P(c.x,c.y,c.z+S_*1.05),mh=maxhp(c);
     if(c.hp<mh*.99)hpBar(p[0],p[1]-5,16,c.hp/mh,'good');
@@ -1173,8 +1178,31 @@ function glLabels(){
 /* ---------- entities ---------- */
 let O=[],E=[],PT=[],B=[],T=[],RING=[],BOLT=[],NOTES=[],CHAIN=[],SCORCH=[],FLASH=[],GLOWS=[];
 let FDT=0,VIG=null,FLOCKS=[],flockT=10;
-const CLOUDS=Array.from({length:6},(_,i)=>({x:Math.random()*1.4-.2,y:.06+Math.random()*.32,s:.6+Math.random()*.9,v:.004+Math.random()*.006,
-  puffs:Array.from({length:5},(_,k)=>[(k-2)*.55+(Math.random()-.5)*.3,(Math.random()-.5)*.25-(k===2?.2:0),.45+Math.random()*.35])}));
+// cumulus clouds: each one is pre-rendered once as a soft shape mask and a light mask,
+// then tinted for the time of day
+function cloudSprites(seed,wide){
+  const r=mulberry(seed),Wc=wide?720:520,Hc=wide?200:300,shape=document.createElement('canvas'),lit=document.createElement('canvas');
+  shape.width=lit.width=Wc;shape.height=lit.height=Hc;const a=shape.getContext('2d'),l=lit.getContext('2d');
+  const base=Hc*.78,puffs=[];
+  const dome=x=>{const t=(x-Wc/2)/(Wc*.42);return Math.max(0,1-t*t)};
+  const n=wide?34:42;
+  for(let k=0;k<n;k++){const x=Wc*(.12+.76*r()),h=dome(x)*(wide?.35:1),rad=(wide?.07:.095)*Wc*(.6+r()*.7)*(.55+h*.6);
+    const y=base-rad*.55-h*Hc*(wide?.25:.42)*(.4+r()*.75);puffs.push([x,y,rad])}
+  for(let k=0;k<(wide?22:14);k++){const x=Wc*(.08+.84*r()),rad=Wc*(.03+r()*.035);puffs.push([x,base-rad*(.3+r()*2.2),rad*(.8+r()*.6)])}
+  const soft=(c,x,y,rad,al)=>{const g=c.createRadialGradient(x,y,0,x,y,rad);g.addColorStop(0,`rgba(255,255,255,${al})`);g.addColorStop(.45,`rgba(255,255,255,${al*.92})`);g.addColorStop(.8,`rgba(255,255,255,${al*.45})`);g.addColorStop(1,'rgba(255,255,255,0)');c.fillStyle=g;c.beginPath();c.arc(x,y,rad,0,TAU);c.fill()};
+  for(const [x,y,rad] of puffs)soft(a,x,y,rad,.9);
+  // flat, slightly darker base: fade the very bottom
+  a.globalCompositeOperation='destination-out';const fb=a.createLinearGradient(0,base-Hc*.04,0,base+Hc*.06);fb.addColorStop(0,'rgba(0,0,0,0)');fb.addColorStop(1,'rgba(0,0,0,1)');a.fillStyle=fb;a.fillRect(0,base-Hc*.04,Wc,Hc);
+  a.globalCompositeOperation='source-over';
+  // light from above and slightly from the side: the upper part of every puff
+  for(const [x,y,rad] of puffs)soft(l,x-rad*.22,y-rad*.38,rad*.78,.85);
+  l.globalCompositeOperation='destination-in';l.drawImage(shape,0,0);l.globalCompositeOperation='source-over';
+  return {shape,lit,w:Wc,h:Hc,tint:{}}}
+function tintOf(sp,which,c){const key=which+(c[0]>>3)+','+(c[1]>>3)+','+(c[2]>>3);if(sp.tint[key])return sp.tint[key];
+  for(const k in sp.tint)if(k[0]===which)delete sp.tint[k];
+  const t=document.createElement('canvas');t.width=sp.w;t.height=sp.h;const x=t.getContext('2d');x.drawImage(which==='s'?sp.shape:sp.lit,0,0);x.globalCompositeOperation='source-in';x.fillStyle=rgb(c);x.fillRect(0,0,sp.w,sp.h);
+  return sp.tint[key]=t}
+const CLOUDS=Array.from({length:8},(_,i)=>{const far=i>=5,wide=far||Math.random()<.3;return {x:Math.random()*1.4-.2,y:far?.22+Math.random()*.12:.03+Math.random()*.22,s:far?.5+Math.random()*.3:.85+Math.random()*.6,v:(far?.002:.004)+Math.random()*.004,far,wide,seed:(Math.random()*1e6)|0,sp:null}});
 const AMB=Array.from({length:26},()=>({x:Math.random()*15,y:Math.random()*15,h:.2+Math.random()*.9,p:Math.random()*6,s:.2+Math.random()*.4}));
 let hero={};
 function place(e,drop,r){
@@ -1516,6 +1544,11 @@ function endPtr(ev){
 cv.addEventListener('pointerup',endPtr);cv.addEventListener('pointercancel',endPtr);
 cv.addEventListener('wheel',ev=>{ev.preventDefault();cam.idle=0;const r=cv.getBoundingClientRect(),mx=ev.clientX-r.left,my=ev.clientY-r.top;
   camPrep();const wf=planeAt(mx,my,0);cam.zoom=clamp(cam.zoom*Math.exp(-ev.deltaY*.0018),.7,4.5);if(cam.follow)setFollow(false);camAnchor(wf,mx,my)},{passive:false});
+let CLEAN=false;
+function setClean(on){CLEAN=on;document.body.classList.toggle('clean',on);$('#cleanBtn').setAttribute('aria-pressed',on);$('#cleanBtn').title=on?'Zobraziť ovládanie':'Iba hra';
+  try{localStorage.setItem('rit-clean',on?'1':'0')}catch(e){}requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')))}
+$('#cleanBtn').addEventListener('click',()=>{setClean(!CLEAN);SFX.click()});
+try{if(localStorage.getItem('rit-clean')==='1')setTimeout(()=>setClean(true),0)}catch(e){}
 $('#camIn').addEventListener('click',()=>{cam.T.zoom=clamp(cam.T.zoom*1.35,.7,4.5);cam.idle=0;SFX.click()});
 $('#camOut').addEventListener('click',()=>{cam.T.zoom=clamp(cam.T.zoom/1.35,.7,4.5);cam.idle=0;SFX.click()});
 $('#camL').addEventListener('click',()=>{cam.T.yaw+=Math.PI/2;cam.idle=0;SFX.click()});
@@ -1980,11 +2013,14 @@ function drawSky(){
   orb(a,17,rgb(mixc([255,246,214],[255,150,70],lowSun)),`rgba(255,${(200-lowSun*60)|0},120,${.3+.15*lowSun})`);
   const mp=orb(a+Math.PI,10,'rgba(236,240,255,.92)','rgba(200,215,255,.14)');
   if(mp){cx.fillStyle=rgb(cT,.9);cx.beginPath();cx.arc(mp[0]+4,mp[1]-2,8.5,0,TAU);cx.fill()}
-  // drifting clouds
-  const cc=mixc(mixc([255,255,255],cH,.25),[255,170,140],DUSK*.5),ca=.55*(1-NIGHT*.75);
-  for(const c of CLOUDS){const x=c.x*W-cam.yaw*30%W*.0,y=c.y*H,s=c.s*W*.12;
-    cx.fillStyle=rgb(cc,ca*.55);for(const [ox,oy,r] of c.puffs){cx.beginPath();cx.ellipse(x+ox*s,y+oy*s,r*s,r*s*.62,0,0,TAU);cx.fill()}
-    cx.fillStyle=rgb(mixc(cc,[255,255,255],.4),ca*.5);for(const [ox,oy,r] of c.puffs){cx.beginPath();cx.ellipse(x+ox*s-r*s*.15,y+oy*s-r*s*.2,r*s*.7,r*s*.4,0,0,TAU);cx.fill()}}
+  // drifting cumulus clouds, lit by the sun or moon
+  const day=1-NIGHT,litC=mixc(mixc([255,255,252],[255,186,140],DUSK*.85),[120,132,170],NIGHT*.9),shC=mixc(mixc(mixc(cH,[150,160,178],.55),[205,140,150],DUSK*.5),[40,46,74],NIGHT*.85);
+  const par=(cam.yaw/TAU)*1.2;
+  for(const c of CLOUDS){if(!c.sp)c.sp=cloudSprites(c.seed,c.wide);const sp=c.sp,w=W*(c.wide?.55:.38)*c.s,h=w*sp.h/sp.w;
+    let x=((c.x-par*(c.far?.4:1))%1.9+1.9)%1.9-.45;x=x*W-w/2;const y=c.y*H-h*.5;
+    const al=(c.far?.6:.92)*(1-NIGHT*.35);
+    cx.globalAlpha=al;cx.drawImage(tintOf(sp,'s',shC),x,y,w,h);cx.globalAlpha=al*(.55+.45*day);cx.drawImage(tintOf(sp,'l',litC),x,y,w,h)}
+  cx.globalAlpha=1;
   // horizon haze behind the island
   const hz=cx.createLinearGradient(0,H*.45,0,H);hz.addColorStop(0,rgb(cH,0));hz.addColorStop(1,rgb(cH,.55));cx.fillStyle=hz;cx.fillRect(0,H*.45,W,H*.55);
 }
@@ -2138,8 +2174,8 @@ function drawFX(gl){
   if(DUSK>.05){cx.globalCompositeOperation='soft-light';cx.fillStyle=`rgba(255,140,60,${.4*DUSK})`;cx.fillRect(0,0,W,H);cx.globalCompositeOperation='source-over'}
   if(!VIG||VIG.w!==W||VIG.h!==H){const g=cx.createRadialGradient(W/2,H*.5,Math.min(W,H)*.35,W/2,H*.5,Math.max(W,H)*.78);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(4,4,14,.42)');VIG={g,w:W,h:H}}
   cx.fillStyle=VIG.g;cx.fillRect(0,0,W,H);
-  drawBossBar();
-  for(const t of T){const s=P(t.x,t.y,t.z);cx.globalAlpha=Math.min(1,t.t*1.5);cx.font=`${t.big?14:11}px ${DF}`;cx.fillStyle='rgba(0,0,0,.6)';cx.fillText(t.txt,s[0]+1,s[1]+1);cx.fillStyle=col(t.col);cx.fillText(t.txt,s[0],s[1])}
+  if(!CLEAN)drawBossBar();
+  if(!CLEAN)for(const t of T){const s=P(t.x,t.y,t.z);cx.globalAlpha=Math.min(1,t.t*1.5);cx.font=`${t.big?14:11}px ${DF}`;cx.fillStyle='rgba(0,0,0,.6)';cx.fillText(t.txt,s[0]+1,s[1]+1);cx.fillStyle=col(t.col);cx.fillText(t.txt,s[0],s[1])}
   cx.globalAlpha=1;
 }
 function drawBolt(b){
@@ -2652,7 +2688,7 @@ function frameBody(now){
   const n=Math.ceil(dt/(1/60));const sdt=dt/n;
   for(let i=0;i<n;i++)step(sdt);
   tapCD-=dt;cam.idle+=dt;camUpdate(dt);
-  for(const c of CLOUDS){c.x+=c.v*dt;if(c.x>1.25)c.x=-.3}
+  for(const c of CLOUDS)c.x+=c.v*dt;
   secAcc+=dt;
   if(secAcc>=1){secAcc-=1;rateHist.push(rateBucket);rateBucket=0;if(rateHist.length>30)rateHist.shift();S.rate=rateHist.reduce((a,b)=>a+b,0)/rateHist.length}
   saveAcc+=dt;if(saveAcc>10){saveAcc=0;save()}
