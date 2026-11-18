@@ -1,0 +1,11 @@
+# Build vystupy
+build/
+.gradle/
+*.apk
+*.ap_
+*.dex
+
+# Lokalne nastavenia (cesta k SDK je na kazdom stroji ina)
+local.properties
+.idea/
+*.iml
