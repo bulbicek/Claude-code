@@ -63,6 +63,16 @@ gradle assembleDebug
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`
 
+## Testy
+
+```bash
+gradle testDebugUnitTest
+```
+
+Overujú, že sa obe obrazovky vytvoria bez pádu (Robolectric), že prepočet OBC
+na rámec sedí s ôsmimi známymi LG kódmi, že všetkých 256 možných rámcov je
+platných NEC a že časovací vzor má správny tvar a dĺžku.
+
 ## Inštalácia
 
 Appka je podpísaná debug kľúčom, takže pri inštalácii treba povoliť
