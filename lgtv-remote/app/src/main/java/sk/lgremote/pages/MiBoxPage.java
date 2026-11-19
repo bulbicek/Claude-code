@@ -43,7 +43,9 @@ public class MiBoxPage implements RemotePage {
     private static final String SERVICE_TYPE = "_androidtvremote2._tcp.";
 
     // Kody tlacidiel su obycajne Android KeyEvent hodnoty
-    private static final int K_POWER = 26;
+    private static final int K_POWER = 26;    // prepinac
+    private static final int K_SLEEP = 223;   // uspat
+    private static final int K_WAKEUP = 224;  // zobudit
     private static final int K_HOME = 3;
     private static final int K_BACK = 4;
     private static final int K_UP = 19;
@@ -115,6 +117,12 @@ public class MiBoxPage implements RemotePage {
                 button(a, "Zadať IP", SURFACE, TEXT, false, this::askForHost),
                 button(a, "Spárovať", ACCENT, TEXT, false, this::startPairing)));
 
+        root.addView(sectionLabel(a, "Napájanie"));
+        root.addView(row(a,
+                powerKey("Zapnúť", K_WAKEUP, 0xFF15803D),
+                powerKey("⏻", K_POWER, DANGER),
+                powerKey("Uspať", K_SLEEP, 0xFF7F1D1D)));
+
         root.addView(sectionLabel(a, "Ovládanie"));
         LinearLayout block = new LinearLayout(a);
         block.setOrientation(LinearLayout.HORIZONTAL);
@@ -136,9 +144,9 @@ public class MiBoxPage implements RemotePage {
 
         LinearLayout side = new LinearLayout(a);
         side.setOrientation(LinearLayout.VERTICAL);
-        side.addView(key("⏻", K_POWER, false, DANGER, TEXT), vlp());
         side.addView(key("Naspäť", K_BACK, false), vlp());
         side.addView(key("Domov", K_HOME, false), vlp());
+        side.addView(key("🎤", K_ASSIST, false), vlp());
 
         block.addView(volume, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
@@ -166,7 +174,6 @@ public class MiBoxPage implements RemotePage {
 
         root.addView(sectionLabel(a, "Ďalšie"));
         root.addView(row(a,
-                key("🎤 Hlas", K_ASSIST, false),
                 key("Program", K_GUIDE, false),
                 key("Nastavenia", K_SETTINGS, false)));
 
@@ -190,6 +197,13 @@ public class MiBoxPage implements RemotePage {
         return button(activity, label, fill, textColor, repeat, () -> sendKey(code));
     }
 
+    private Button powerKey(final String label, final int code, int fill) {
+        return button(activity, label, fill, TEXT, false, () -> {
+            appendLog("napájanie: " + label + " (kód " + code + ")");
+            sendKey(code);
+        });
+    }
+
     private Button app(String label, final String link, int fill) {
         return button(activity, label, fill, TEXT, false, () -> {
             AtvRemote r = remote;
@@ -201,10 +215,33 @@ public class MiBoxPage implements RemotePage {
 
     private void sendKey(int code) {
         AtvRemote r = remote;
-        if (r == null || !r.sendKey(code)) {
-            setStatus("box nie je pripojený — skús Spárovať");
-            connectIfPossible();
+        if (r != null && r.sendKey(code)) {
+            return;
         }
+        // Box mohol medzitym zaspat. Tlacidlo si odlozime a posleme ho,
+        // len co sa spojenie obnovi — inak by sa prve stlacenie stratilo.
+        pendingKey = code;
+        pendingSince = System.currentTimeMillis();
+        setStatus("box neodpovedá, skúšam sa pripojiť …");
+        connectIfPossible();
+    }
+
+    private volatile int pendingKey = -1;
+    private volatile long pendingSince;
+
+    private void flushPendingKey() {
+        int code = pendingKey;
+        pendingKey = -1;
+        AtvRemote r = remote;
+        if (code < 0 || r == null) {
+            return;
+        }
+        if (System.currentTimeMillis() - pendingSince > 15000) {
+            appendLog("odložené tlačidlo je už staré, zahadzujem ho");
+            return;
+        }
+        appendLog("posielam odložené tlačidlo " + code);
+        r.sendKey(code);
     }
 
     // ---------- spojenie ----------
@@ -231,7 +268,10 @@ public class MiBoxPage implements RemotePage {
                 appendLog(line);
             }
             @Override public void onReady(String deviceName) {
-                ui(() -> setStatus("pripojené · " + deviceName));
+                ui(() -> {
+                    setStatus("pripojené · " + deviceName);
+                    flushPendingKey();
+                });
             }
             @Override public void onClosed(String reason) {
                 ui(() -> setStatus("odpojené (" + reason + ")"));

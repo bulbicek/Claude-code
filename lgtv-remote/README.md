@@ -1,4 +1,4 @@
-# LG Ovládač — IR diaľkové ovládanie pre LG 42LW4500
+# Ovládač — diaľkové ovládanie televízora a Mi Boxu z telefónu
 
 Android appka, ktorá ovláda televízor **priamo infračerveným vysielačom telefónu**.
 Nepotrebuje WiFi, sieť ani žiadny ďalší hardvér — funguje presne tak ako originálny
