@@ -18,6 +18,7 @@ import android.widget.TextView;
 import sk.lgremote.Ui;
 import sk.lgremote.atv.AtvPairing;
 import sk.lgremote.atv.AtvRemote;
+import sk.lgremote.atv.WakeOnLan;
 
 import static sk.lgremote.Ui.ACCENT;
 import static sk.lgremote.Ui.DANGER;
@@ -40,6 +41,7 @@ public class MiBoxPage implements RemotePage {
 
     private static final String PREFS = "atv";
     private static final String KEY_HOST = "host";
+    private static final String KEY_MAC = "mac";
     private static final String SERVICE_TYPE = "_androidtvremote2._tcp.";
 
     // Kody tlacidiel su obycajne Android KeyEvent hodnoty
@@ -114,12 +116,12 @@ public class MiBoxPage implements RemotePage {
 
         root.addView(row(a,
                 button(a, "Nájsť box", SURFACE, TEXT, false, this::discover),
-                button(a, "Zadať IP", SURFACE, TEXT, false, this::askForHost),
+                button(a, "Adresy", SURFACE, TEXT, false, this::askForHost),
                 button(a, "Spárovať", ACCENT, TEXT, false, this::startPairing)));
 
         root.addView(sectionLabel(a, "Napájanie"));
         root.addView(row(a,
-                powerKey("Zapnúť", K_WAKEUP, 0xFF15803D),
+                button(a, "Zapnúť", 0xFF15803D, TEXT, false, this::wakeUp),
                 powerKey("⏻", K_POWER, DANGER),
                 powerKey("Uspať", K_SLEEP, 0xFF7F1D1D)));
 
@@ -195,6 +197,58 @@ public class MiBoxPage implements RemotePage {
 
     private Button key(String label, final int code, boolean repeat, int fill, int textColor) {
         return button(activity, label, fill, textColor, repeat, () -> sendKey(code));
+    }
+
+    /**
+     * Zobudenie boxu.
+     *
+     * Ked spojenie stoji, staci tlacidlo. Ked box spi a zo siete zmizol,
+     * posle sa kuzelny paket — ten pocuva sietova karta aj v spanku —
+     * a potom sa par krat skusi pripojit, kym box nabehne.
+     */
+    private void wakeUp() {
+        AtvRemote r = remote;
+        if (r != null && r.isReady()) {
+            appendLog("napájanie: Zapnúť (kód " + K_WAKEUP + ")");
+            r.sendKey(K_WAKEUP);
+            return;
+        }
+        final String mac = prefs.getString(KEY_MAC, null);
+        if (mac == null || mac.isEmpty()) {
+            setStatus("na zobudenie treba MAC adresu boxu");
+            askForHost();
+            return;
+        }
+        final String host = host();
+        setStatus("budím box …");
+        Thread t = new Thread(() -> {
+            try {
+                WakeOnLan.send(mac, host);
+                appendLog("kúzelný paket odoslaný na " + mac);
+            } catch (Exception e) {
+                appendLog("paket sa neodoslal: " + e.getMessage());
+                ui(() -> setStatus("zobudenie zlyhalo: " + e.getMessage()));
+                return;
+            }
+            for (int pokus = 1; pokus <= 6; pokus++) {
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                AtvRemote current = remote;
+                if (current != null && current.isReady()) {
+                    appendLog("box sa prebudil");
+                    return;
+                }
+                appendLog("skúšam sa pripojiť (" + pokus + "/6)");
+                ui(this::connectIfPossible);
+            }
+            ui(() -> setStatus("box sa neozval — možno nemá zapnuté budenie cez sieť"));
+        }, "atv-wake");
+        t.setDaemon(true);
+        t.start();
     }
 
     private Button powerKey(final String label, final int code, int fill) {
@@ -334,21 +388,39 @@ public class MiBoxPage implements RemotePage {
     }
 
     private void askForHost() {
-        final EditText input = new EditText(activity);
-        input.setHint("napr. 192.168.1.42");
-        input.setText(host() == null ? "" : host());
-        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        final EditText ip = new EditText(activity);
+        ip.setHint("IP, napr. 192.168.0.100");
+        ip.setText(host() == null ? "" : host());
+        ip.setInputType(InputType.TYPE_CLASS_TEXT);
+
+        final EditText mac = new EditText(activity);
+        mac.setHint("MAC, napr. 28:6C:07:AA:BB:CC");
+        mac.setText(prefs.getString(KEY_MAC, ""));
+        mac.setInputType(InputType.TYPE_CLASS_TEXT);
+
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(activity, 20), dp(activity, 8), dp(activity, 20), 0);
+        box.addView(ip);
+        box.addView(mac);
+
         new AlertDialog.Builder(activity)
-                .setTitle("IP adresa boxu")
-                .setMessage("Nájdeš ju na boxe v Nastavenia → Sieť a internet.")
-                .setView(input)
+                .setTitle("Adresy boxu")
+                .setMessage("Obe nájdeš na boxe v Nastavenia → Sieť a internet, "
+                        + "po otvorení pripojenej siete. MAC adresa je potrebná "
+                        + "na zobudenie boxu zo spánku.")
+                .setView(box)
                 .setPositiveButton("Uložiť", (d, w) -> {
-                    String value = input.getText().toString().trim();
-                    if (!value.isEmpty()) {
-                        prefs.edit().putString(KEY_HOST, value).apply();
-                        setStatus("uložené: " + value);
-                        connectIfPossible();
+                    String ipValue = ip.getText().toString().trim();
+                    String macValue = mac.getText().toString().trim();
+                    SharedPreferences.Editor edit = prefs.edit();
+                    if (!ipValue.isEmpty()) {
+                        edit.putString(KEY_HOST, ipValue);
                     }
+                    edit.putString(KEY_MAC, macValue);
+                    edit.apply();
+                    setStatus("adresy uložené");
+                    connectIfPossible();
                 })
                 .setNegativeButton("Zrušiť", null)
                 .show();
