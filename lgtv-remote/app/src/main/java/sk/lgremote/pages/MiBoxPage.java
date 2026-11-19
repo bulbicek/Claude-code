@@ -124,6 +124,10 @@ public class MiBoxPage implements RemotePage {
                 button(a, "Zapnúť", 0xFF15803D, TEXT, false, this::wakeUp),
                 powerKey("⏻", K_POWER, DANGER),
                 powerKey("Uspať", K_SLEEP, 0xFF7F1D1D)));
+        root.addView(Ui.note(a,
+                "Box si v spánku vypína WiFi, takže zo spánku ho prebudí "
+                + "len pôvodný ovládač. Ak má byť appka vždy po ruke, "
+                + "vypni na boxe automatické uspávanie.", MUTED));
 
         root.addView(sectionLabel(a, "Ovládanie"));
         LinearLayout block = new LinearLayout(a);
