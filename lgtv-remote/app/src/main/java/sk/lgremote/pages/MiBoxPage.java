@@ -230,25 +230,39 @@ public class MiBoxPage implements RemotePage {
                 ui(() -> setStatus("zobudenie zlyhalo: " + e.getMessage()));
                 return;
             }
-            for (int pokus = 1; pokus <= 6; pokus++) {
+            // Rychle tukanie na port namiesto plneho pripajania: ked je box
+            // mimo siete, odpoved pride hned a netreba cakat desat sekund.
+            for (int pokus = 1; pokus <= 8; pokus++) {
                 try {
-                    Thread.sleep(3000);
+                    Thread.sleep(2000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }
-                AtvRemote current = remote;
-                if (current != null && current.isReady()) {
-                    appendLog("box sa prebudil");
+                if (odpovedaPort(host)) {
+                    appendLog("box je spat v sieti, pripájam sa");
+                    ui(this::connectIfPossible);
                     return;
                 }
-                appendLog("skúšam sa pripojiť (" + pokus + "/6)");
-                ui(this::connectIfPossible);
+                appendLog("box zatiaľ nie je v sieti (" + pokus + "/8)");
             }
-            ui(() -> setStatus("box sa neozval — možno nemá zapnuté budenie cez sieť"));
+            ui(() -> setStatus("box má v spánku vypnutú WiFi — zobudiť sa cez sieť nedá"));
         }, "atv-wake");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** Odpoveda box na porte ovladania? Kratke cakanie, len na zistenie. */
+    private static boolean odpovedaPort(String host) {
+        if (host == null) {
+            return false;
+        }
+        try (java.net.Socket probe = new java.net.Socket()) {
+            probe.connect(new java.net.InetSocketAddress(host, AtvRemote.PORT), 1500);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private Button powerKey(final String label, final int code, int fill) {
