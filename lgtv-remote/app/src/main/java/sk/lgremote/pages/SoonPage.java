@@ -12,9 +12,16 @@ import sk.lgremote.Ui;
 public class SoonPage implements RemotePage {
 
     private final int number;
+    private final int background;
 
-    public SoonPage(int number) {
+    public SoonPage(int number, int background) {
         this.number = number;
+        this.background = background;
+    }
+
+    @Override
+    public int background() {
+        return background;
     }
 
     @Override
@@ -30,6 +37,7 @@ public class SoonPage implements RemotePage {
     @Override
     public View create(Activity a) {
         LinearLayout root = new LinearLayout(a);
+        root.setBackgroundColor(background);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
         root.setPadding(Ui.dp(a, 32), Ui.dp(a, 32), Ui.dp(a, 32), Ui.dp(a, 32));

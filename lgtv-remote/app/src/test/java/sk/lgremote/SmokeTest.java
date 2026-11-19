@@ -39,7 +39,8 @@ public class SmokeTest {
     @Test
     public void vsetkyStrankySaVytvoria() {
         Activity a = Robolectric.buildActivity(MainActivity.class).setup().get();
-        RemotePage[] pages = {new LgPage(), new MiBoxPage(), new SoonPage(3), new SoonPage(4)};
+        RemotePage[] pages = {new LgPage(), new MiBoxPage(),
+                new SoonPage(3, Ui.BG_GREEN), new SoonPage(4, Ui.BG_PURPLE)};
         for (RemotePage page : pages) {
             assertNotNull("stranka nema nazov", page.title());
             assertNotNull("stranka nema popis", page.subtitle());
@@ -47,6 +48,24 @@ public class SmokeTest {
             assertNotNull("stranka " + page.title() + " sa nevytvorila", v);
             page.release();
         }
+    }
+
+    @Test
+    public void kazdaStrankaMaVlastnyOdtien() {
+        RemotePage[] pages = {new LgPage(), new MiBoxPage(),
+                new SoonPage(3, Ui.BG_GREEN), new SoonPage(4, Ui.BG_PURPLE)};
+        java.util.Set<Integer> odtiene = new java.util.HashSet<>();
+        for (RemotePage page : pages) {
+            int color = page.background();
+            assertTrue("pozadie nie je nepriehladne: " + page.title(),
+                    (color >>> 24) == 0xFF);
+            // Vsetky odtiene maju byt rovnako tmave, nech appka drzi pokope.
+            int jas = ((color >> 16 & 0xFF) + (color >> 8 & 0xFF) + (color & 0xFF)) / 3;
+            assertTrue("pozadie nie je tmave: " + page.title() + " (jas " + jas + ")",
+                    jas < 40);
+            assertTrue("odtien sa opakuje: " + page.title(), odtiene.add(color));
+        }
+        assertEquals(4, odtiene.size());
     }
 
     @Test

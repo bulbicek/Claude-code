@@ -41,11 +41,17 @@ public class LgPage implements RemotePage {
     }
 
     @Override
+    public int background() {
+        return Ui.BG_BLUE;
+    }
+
+    @Override
     public View create(Activity a) {
         this.activity = a;
         this.ir = new IrSender(a);
 
         ScrollView scroll = new ScrollView(a);
+        scroll.setBackgroundColor(background());
         root = new LinearLayout(a);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(a, 10), dp(a, 4), dp(a, 10), dp(a, 24));

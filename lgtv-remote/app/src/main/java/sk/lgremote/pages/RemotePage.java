@@ -12,6 +12,9 @@ public interface RemotePage {
     /** Kratky popis zariadenia pod nazvom. */
     String subtitle();
 
+    /** Tmavy odtien pozadia, podla ktoreho sa stranka rozozna na prvy pohlad. */
+    int background();
+
     /** Vytvori obsah stranky. */
     View create(Activity activity);
 

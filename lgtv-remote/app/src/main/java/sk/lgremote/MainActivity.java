@@ -31,9 +31,10 @@ public class MainActivity extends Activity {
     private final List<RemotePage> pages = Arrays.asList(
             new LgPage(),
             new MiBoxPage(),
-            new SoonPage(3),
-            new SoonPage(4));
+            new SoonPage(3, Ui.BG_GREEN),
+            new SoonPage(4, Ui.BG_PURPLE));
 
+    private LinearLayout screen;
     private TextView title;
     private TextView subtitle;
     private final List<View> dots = new ArrayList<>();
@@ -44,7 +45,8 @@ public class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Ui.BG);
+        root.setBackgroundColor(pages.get(0).background());
+        screen = root;
 
         root.addView(buildHeader());
 
@@ -102,6 +104,7 @@ public class MainActivity extends Activity {
 
     private void showPage(int position) {
         RemotePage page = pages.get(position);
+        screen.setBackgroundColor(page.background());
         title.setText(page.title());
         subtitle.setText(page.subtitle());
         for (int i = 0; i < dots.size(); i++) {
@@ -128,6 +131,7 @@ public class MainActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
             container.setBackgroundColor(Color.TRANSPARENT);
+            container.setClipChildren(false);
             return new PageHolder(container);
         }
 

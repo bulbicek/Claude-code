@@ -22,6 +22,13 @@ import android.widget.TextView;
 public class Ui {
 
     public static final int BG        = 0xFF101014;
+
+    // Pozadie kazdeho ovladaca. Rovnako tmave, len iny odtien.
+    public static final int BG_BLUE   = 0xFF0D1523;
+    public static final int BG_RED    = 0xFF1B0E11;
+    public static final int BG_GREEN  = 0xFF0B1711;
+    public static final int BG_PURPLE = 0xFF150D1E;
+
     public static final int SURFACE   = 0xFF26262E;
     public static final int TEXT      = 0xFFF2F2F5;
     public static final int MUTED     = 0xFF8A8A96;
