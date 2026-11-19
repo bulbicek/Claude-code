@@ -5,6 +5,12 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import android.app.Activity;
+import android.view.View;
+
+import sk.lgremote.pages.LgPage;
+import sk.lgremote.pages.MiBoxPage;
+import sk.lgremote.pages.RemotePage;
+import sk.lgremote.pages.SoonPage;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -28,6 +34,19 @@ public class SmokeTest {
     public void skenerSaVytvori() {
         Activity a = Robolectric.buildActivity(ScannerActivity.class).setup().get();
         assertNotNull(a);
+    }
+
+    @Test
+    public void vsetkyStrankySaVytvoria() {
+        Activity a = Robolectric.buildActivity(MainActivity.class).setup().get();
+        RemotePage[] pages = {new LgPage(), new MiBoxPage(), new SoonPage(3), new SoonPage(4)};
+        for (RemotePage page : pages) {
+            assertNotNull("stranka nema nazov", page.title());
+            assertNotNull("stranka nema popis", page.subtitle());
+            View v = page.create(a);
+            assertNotNull("stranka " + page.title() + " sa nevytvorila", v);
+            page.release();
+        }
     }
 
     @Test
