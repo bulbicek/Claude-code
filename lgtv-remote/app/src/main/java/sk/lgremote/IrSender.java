@@ -67,6 +67,19 @@ public class IrSender {
         return sendFrame(frameForObc(obc));
     }
 
+    /** Posle hotovy casovaci vzor na danej nosnej (napr. Kaseikyo na 37 kHz). */
+    public boolean sendPattern(int carrierHz, int[] pattern) {
+        if (!hasEmitter) {
+            return false;
+        }
+        try {
+            irManager.transmit(carrierHz, pattern);
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     /** Posle lubovolny 32-bitovy ramec (pre skener a vlastne kody). */
     public boolean sendFrame(long frame) {
         if (!hasEmitter) {

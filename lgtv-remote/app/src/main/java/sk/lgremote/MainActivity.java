@@ -20,6 +20,7 @@ import java.util.List;
 
 import sk.lgremote.pages.LgPage;
 import sk.lgremote.pages.MiBoxPage;
+import sk.lgremote.pages.PanasonicPage;
 import sk.lgremote.pages.RemotePage;
 import sk.lgremote.pages.SoonPage;
 
@@ -32,7 +33,7 @@ public class MainActivity extends Activity {
             new LgPage(),
             new MiBoxPage(),
             new SoonPage(3, Ui.BG_GREEN),
-            new SoonPage(4, Ui.BG_PURPLE));
+            new PanasonicPage());
 
     private LinearLayout screen;
     private TextView title;

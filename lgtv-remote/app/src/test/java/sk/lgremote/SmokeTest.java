@@ -9,6 +9,7 @@ import android.view.View;
 
 import sk.lgremote.pages.LgPage;
 import sk.lgremote.pages.MiBoxPage;
+import sk.lgremote.pages.PanasonicPage;
 import sk.lgremote.pages.RemotePage;
 import sk.lgremote.pages.SoonPage;
 
@@ -40,7 +41,7 @@ public class SmokeTest {
     public void vsetkyStrankySaVytvoria() {
         Activity a = Robolectric.buildActivity(MainActivity.class).setup().get();
         RemotePage[] pages = {new LgPage(), new MiBoxPage(),
-                new SoonPage(3, Ui.BG_GREEN), new SoonPage(4, Ui.BG_PURPLE)};
+                new SoonPage(3, Ui.BG_GREEN), new PanasonicPage()};
         for (RemotePage page : pages) {
             assertNotNull("stranka nema nazov", page.title());
             assertNotNull("stranka nema popis", page.subtitle());
@@ -53,7 +54,7 @@ public class SmokeTest {
     @Test
     public void kazdaStrankaMaVlastnyOdtien() {
         RemotePage[] pages = {new LgPage(), new MiBoxPage(),
-                new SoonPage(3, Ui.BG_GREEN), new SoonPage(4, Ui.BG_PURPLE)};
+                new SoonPage(3, Ui.BG_GREEN), new PanasonicPage()};
         java.util.Set<Integer> odtiene = new java.util.HashSet<>();
         for (RemotePage page : pages) {
             int color = page.background();
