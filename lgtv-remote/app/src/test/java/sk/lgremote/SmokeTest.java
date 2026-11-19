@@ -11,7 +11,6 @@ import sk.lgremote.pages.LgPage;
 import sk.lgremote.pages.MiBoxPage;
 import sk.lgremote.pages.PanasonicPage;
 import sk.lgremote.pages.RemotePage;
-import sk.lgremote.pages.SoonPage;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -40,8 +39,7 @@ public class SmokeTest {
     @Test
     public void vsetkyStrankySaVytvoria() {
         Activity a = Robolectric.buildActivity(MainActivity.class).setup().get();
-        RemotePage[] pages = {new LgPage(), new MiBoxPage(),
-                new SoonPage(3, Ui.BG_GREEN), new PanasonicPage()};
+        RemotePage[] pages = {new LgPage(), new MiBoxPage(), new PanasonicPage()};
         for (RemotePage page : pages) {
             assertNotNull("stranka nema nazov", page.title());
             assertNotNull("stranka nema popis", page.subtitle());
@@ -53,8 +51,7 @@ public class SmokeTest {
 
     @Test
     public void kazdaStrankaMaVlastnyOdtien() {
-        RemotePage[] pages = {new LgPage(), new MiBoxPage(),
-                new SoonPage(3, Ui.BG_GREEN), new PanasonicPage()};
+        RemotePage[] pages = {new LgPage(), new MiBoxPage(), new PanasonicPage()};
         java.util.Set<Integer> odtiene = new java.util.HashSet<>();
         for (RemotePage page : pages) {
             int color = page.background();
@@ -66,7 +63,7 @@ public class SmokeTest {
                     jas < 40);
             assertTrue("odtien sa opakuje: " + page.title(), odtiene.add(color));
         }
-        assertEquals(4, odtiene.size());
+        assertEquals(3, odtiene.size());
     }
 
     @Test

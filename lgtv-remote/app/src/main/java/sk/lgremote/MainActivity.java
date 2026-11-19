@@ -22,7 +22,6 @@ import sk.lgremote.pages.LgPage;
 import sk.lgremote.pages.MiBoxPage;
 import sk.lgremote.pages.PanasonicPage;
 import sk.lgremote.pages.RemotePage;
-import sk.lgremote.pages.SoonPage;
 
 /**
  * Drzi vsetky ovladace vedla seba — listuje sa medzi nimi prstom.
@@ -32,7 +31,6 @@ public class MainActivity extends Activity {
     private final List<RemotePage> pages = Arrays.asList(
             new LgPage(),
             new MiBoxPage(),
-            new SoonPage(3, Ui.BG_GREEN),
             new PanasonicPage());
 
     private LinearLayout screen;

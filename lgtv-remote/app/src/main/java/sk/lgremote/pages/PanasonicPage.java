@@ -76,7 +76,18 @@ public class PanasonicPage implements RemotePage {
         }
 
         root.addView(sectionLabel(a, "Napájanie"));
-        root.addView(row(a, key("⏻", S_MAIN, 0x3D, false, DANGER, TEXT)));
+        root.addView(row(a,
+                key("⏻ 00", S_MAIN, 0x3D, false, DANGER, TEXT),
+                key("⏻ 1C", S_MENU, 0x3D, false, DANGER, TEXT)));
+        root.addView(row(a,
+                key("Zap 00", S_MAIN, 0x3E, false, 0xFF15803D, TEXT),
+                key("Zap 1C", S_MENU, 0x3E, false, 0xFF15803D, TEXT),
+                key("Vyp 00", S_MAIN, 0x3F, false, 0xFF7F1D1D, TEXT),
+                key("Vyp 1C", S_MENU, 0x3F, false, 0xFF7F1D1D, TEXT)));
+        root.addView(Ui.note(a,
+                "Napájanie má zatiaľ viac verzií, lebo databázy sa v ňom nezhodujú. "
+                + "Skús ich po poradí a napíš mi, ktorá zabrala — ostatné potom "
+                + "odstránim.", MUTED));
 
         root.addView(sectionLabel(a, "Hlasitosť"));
         root.addView(row(a,
