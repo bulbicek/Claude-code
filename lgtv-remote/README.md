@@ -83,3 +83,27 @@ Appka je podpísaná debug kľúčom, takže pri inštalácii treba povoliť
 - Android 5.0+
 - Telefón s IR blasterom (Xiaomi, Redmi, Poco, staršie Huawei a Samsung)
 - Povolenie `TRANSMIT_IR` — udeľuje sa automaticky, nič netreba potvrdzovať
+
+## ANTIK Mini 2 STB — prečo zatiaľ chýba
+
+Tretí ovládač (ANTIK Mini 2, model AWS 2651, ovládač RC211) je odložený.
+
+Čo je overené:
+
+- Ovládač **je infračervený** (overené cez kameru telefónu).
+- Jeho kódy **nie sú v žiadnej verejnej databáze**. Prehľadané boli celé
+  [Flipper-IRDB](https://github.com/UberGuidoZ/Flipper-IRDB) aj
+  [irdb](https://github.com/probonopd/irdb) — značka ANTIK v nich nie je.
+- Kódy sa **nedajú prebrať od príbuzných boxov**. Mini 2 stojí na čipe
+  STMicroelectronics STiH207, ale boxy s podobným hardvérom používajú každý
+  niečo iné: MAG protokol RC5, Humax a Thomson NEC s inou adresou,
+  Arcadyan dokonca nosnú 56 kHz namiesto 38 kHz.
+- **Telefón kódy odčítať nevie** — IR blaster dokáže len vysielať.
+
+Ako to dokončiť, keď na to príde čas:
+
+1. **Odchytiť signál** IR prijímačom (TSOP38238) na Arduino/ESP32/Raspberry Pi.
+   Dá presný protokol, adresu aj kódy všetkých tlačidiel. Istá cesta.
+2. **Slepé hľadanie** z appky. RC5 má malý priestor (32 adries × 64 príkazov,
+   asi štyri minúty), NEC je ale 65 536 kombinácií. Neistý výsledok —
+   ak box používa iný protokol alebo inú nosnú, nenájde sa nič.
