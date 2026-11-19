@@ -2,6 +2,8 @@ package sk.lgremote.atv;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.net.ssl.SSLSocket;
@@ -27,15 +29,36 @@ public class AtvRemote {
     }
 
     private final String host;
+    private final int port;
     private final Listener listener;
     private final AtomicBoolean ready = new AtomicBoolean(false);
+    private final AtomicBoolean closingOnPurpose = new AtomicBoolean(false);
+    /** Odosielanie musi byt mimo vlakna, ktore kresli obrazovku. */
+    private final ExecutorService sender =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "atv-sender");
+                t.setDaemon(true);
+                return t;
+            });
+    private volatile String lastWriteThread;
     private volatile SSLSocket socket;
     private volatile OutputStream out;
     private volatile Thread reader;
 
     public AtvRemote(String host, Listener listener) {
+        this(host, PORT, listener);
+    }
+
+    /** Port sa da zmenit, aby sa dala relacia otestovat proti falosnemu boxu. */
+    public AtvRemote(String host, int port, Listener listener) {
         this.host = host;
+        this.port = port;
         this.listener = listener;
+    }
+
+    /** Na ktorom vlakne sa naposledy zapisovalo do spojenia. */
+    public String lastWriteThread() {
+        return lastWriteThread;
     }
 
     public boolean isReady() {
@@ -53,6 +76,7 @@ public class AtvRemote {
     }
 
     public void close() {
+        closingOnPurpose.set(true);
         ready.set(false);
         SSLSocket s = socket;
         if (s != null) {
@@ -67,8 +91,8 @@ public class AtvRemote {
     private void loop() {
         String reason = "spojenie sa skoncilo";
         try {
-            listener.onLog("pripajam sa na " + host + ":" + PORT);
-            SSLSocket s = AtvCrypto.connect(host, PORT, 10000);
+            listener.onLog("pripajam sa na " + host + ":" + port);
+            SSLSocket s = AtvCrypto.connect(host, port, 10000);
             s.setSoTimeout(0);  // box posiela spravy aj po dlhsom tichu
             socket = s;
             out = s.getOutputStream();
@@ -100,7 +124,7 @@ public class AtvRemote {
                 }
             }
         } catch (Exception e) {
-            reason = AtvPairing.popis(e);
+            reason = closingOnPurpose.get() ? "zatvorene appkou" : AtvPairing.popis(e);
         } finally {
             ready.set(false);
             SSLSocket s = socket;
@@ -143,8 +167,8 @@ public class AtvRemote {
 
     private static Proto.Writer configureReply() {
         Proto.Writer info = new Proto.Writer()
-                .string(1, android.os.Build.MODEL)
-                .string(2, android.os.Build.MANUFACTURER)
+                .string(1, nieJePrazdne(android.os.Build.MODEL, "telefon"))
+                .string(2, nieJePrazdne(android.os.Build.MANUFACTURER, "android"))
                 .varint(3, 1)
                 .string(4, "1")
                 .string(5, "atvremote")
@@ -155,39 +179,57 @@ public class AtvRemote {
         return outer().message(1, configure);
     }
 
+    /** Udaje o telefone nemusia byt vyplnene; prazdny retazec by zapis zhodil. */
+    private static String nieJePrazdne(String value, String fallback) {
+        return value == null || value.isEmpty() ? fallback : value;
+    }
+
     /** Posle stlacenie tlacidla (kod je Android KeyEvent). */
     public boolean sendKey(int keyCode) {
-        OutputStream o = out;
-        if (o == null || !ready.get()) {
-            return false;
-        }
-        try {
-            Proto.Writer inject = new Proto.Writer()
-                    .varint(1, keyCode)
-                    .varint(2, 3);  // 3 = kratke stlacenie
-            AtvFrames.write(o, outer().message(10, inject));
-            return true;
-        } catch (Exception e) {
-            listener.onLog("tlacidlo sa neodoslalo: " + AtvPairing.popis(e));
-            close();
-            return false;
-        }
+        Proto.Writer inject = new Proto.Writer()
+                .varint(1, keyCode)
+                .varint(2, 3);  // 3 = kratke stlacenie
+        return send(outer().message(10, inject), "tlacidlo");
     }
 
     /** Spusti aplikaciu podla jej odkazu, napr. https://www.netflix.com. */
     public boolean launchApp(String appLink) {
-        OutputStream o = out;
-        if (o == null || !ready.get()) {
+        return send(outer().message(90, new Proto.Writer().string(1, appLink)),
+                "aplikacia");
+    }
+
+    /**
+     * Zapis sa odovzda vlastnemu vlaknu. Android by zapis po sieti priamo
+     * z obsluhy tlacidla odmietol a spojenie by sa zbytocne zhodilo.
+     */
+    private boolean send(final Proto.Writer message, final String co) {
+        if (out == null || !ready.get()) {
             return false;
         }
         try {
-            AtvFrames.write(o, outer().message(90,
-                    new Proto.Writer().string(1, appLink)));
+            sender.execute(() -> {
+                OutputStream o = out;
+                if (o == null) {
+                    return;
+                }
+                lastWriteThread = Thread.currentThread().getName();
+                try {
+                    AtvFrames.write(o, message);
+                } catch (Exception e) {
+                    listener.onLog(co + " sa neodoslalo: " + AtvPairing.popis(e));
+                    close();
+                }
+            });
             return true;
-        } catch (Exception e) {
-            listener.onLog("aplikacia sa nespustila: " + AtvPairing.popis(e));
-            close();
+        } catch (RuntimeException e) {
+            listener.onLog(co + " sa neodoslalo: " + AtvPairing.popis(e));
             return false;
         }
+    }
+
+    /** Ukonci spojenie aj odosielacie vlakno. */
+    public void shutdown() {
+        close();
+        sender.shutdownNow();
     }
 }

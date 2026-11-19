@@ -431,7 +431,7 @@ public class MiBoxPage implements RemotePage {
     public void release() {
         stopDiscovery();
         if (remote != null) {
-            remote.close();
+            remote.shutdown();
         }
     }
 }
