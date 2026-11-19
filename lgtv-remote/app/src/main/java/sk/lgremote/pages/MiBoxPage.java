@@ -87,6 +87,7 @@ public class MiBoxPage implements RemotePage {
     public View create(Activity a) {
         this.activity = a;
         this.prefs = a.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        sk.lgremote.atv.AtvCrypto.init(a.getFilesDir());
 
         ScrollView scroll = new ScrollView(a);
         LinearLayout root = new LinearLayout(a);

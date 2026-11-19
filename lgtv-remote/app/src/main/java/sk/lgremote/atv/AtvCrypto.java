@@ -1,96 +1,103 @@
 package sk.lgremote.atv;
 
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
-
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.math.BigInteger;
-import java.security.KeyPairGenerator;
+import java.net.InetSocketAddress;
 import java.security.KeyStore;
+import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
-import java.util.Calendar;
-import java.util.Date;
 
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
-import javax.security.auth.x500.X500Principal;
 
 /**
- * Kluc a certifikat klienta pre spojenie s Android TV.
+ * Totoznost appky voci Android TV: kluc a certifikat klienta.
  *
- * Box si klienta pamata podla jeho certifikatu, takze kluc musi prezit
- * restart appky — je ulozeny v AndroidKeyStore, odkial sa da nebrat von.
+ * Kluc sa vyraba v samotnej appke a uklada do suboru v jej sukromnom
+ * priecinku. Zabezpecene ulozisko Androidu by bolo lakavejsie, ale kluc
+ * v nom smie podpisovat len sposobmi, ktore sa urcia pri vyrobe — a box
+ * si vypyta RSA-PSS, co take spojenie zhodi.
+ *
+ * Box si klienta pamata podla certifikatu, takze subor musi prezit
+ * restart appky. Ked sa zmaze, parovanie treba zopakovat.
  */
 public final class AtvCrypto {
 
-    private static final String ALIAS = "atv_client_key";
+    private static final String FILE_NAME = "atv-client.p12";
+    private static final char[] PASSWORD = "atvremote".toCharArray();
+    private static final String ALIAS = "client";
+
+    private static File storeFile;
+    private static KeyStore cached;
 
     private AtvCrypto() {}
 
-    /** Vytvori kluc a samopodpisany certifikat, ak este neexistuju. */
-    public static synchronized void ensureKey() throws Exception {
-        KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-        ks.load(null);
-        if (ks.containsAlias(ALIAS)) {
-            return;
-        }
-        Calendar start = Calendar.getInstance();
-        Calendar end = Calendar.getInstance();
-        end.add(Calendar.YEAR, 25);
+    /** Zavola sa raz pri starte, nez sa appka skusi pripojit. */
+    public static synchronized void init(File filesDir) {
+        storeFile = new File(filesDir, FILE_NAME);
+    }
 
-        KeyPairGenerator gen = KeyPairGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore");
-        gen.initialize(new KeyGenParameterSpec.Builder(ALIAS,
-                KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY
-                        | KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
-                .setKeySize(2048)
-                .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA1,
-                        KeyProperties.DIGEST_NONE)
-                .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1)
-                .setCertificateSubject(new X500Principal("CN=atvremote"))
-                .setCertificateSerialNumber(BigInteger.valueOf(1))
-                .setCertificateNotBefore(new Date(start.getTimeInMillis()))
-                .setCertificateNotAfter(new Date(end.getTimeInMillis()))
-                .build());
-        gen.generateKeyPair();
+    /** Nacita ulozenu totoznost, alebo vyrobi novu. */
+    public static synchronized KeyStore keyStore() throws Exception {
+        if (cached != null) {
+            return cached;
+        }
+        if (storeFile == null) {
+            throw new IllegalStateException("AtvCrypto.init sa este nezavolalo");
+        }
+        KeyStore ks = KeyStore.getInstance("PKCS12");
+        if (storeFile.exists()) {
+            try (FileInputStream in = new FileInputStream(storeFile)) {
+                ks.load(in, PASSWORD);
+            }
+        } else {
+            ks.load(null, PASSWORD);
+            SelfSigned.Identity identity = SelfSigned.create("atvremote", 25);
+            ks.setKeyEntry(ALIAS, identity.privateKey, PASSWORD,
+                    new Certificate[] {identity.certificate});
+            try (FileOutputStream out = new FileOutputStream(storeFile)) {
+                ks.store(out, PASSWORD);
+            }
+        }
+        cached = ks;
+        return ks;
     }
 
     public static X509Certificate clientCertificate() throws Exception {
-        KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-        ks.load(null);
-        return (X509Certificate) ks.getCertificate(ALIAS);
+        return (X509Certificate) keyStore().getCertificate(ALIAS);
     }
 
     /**
      * TLS spojenie s certifikatom klienta.
      *
      * Certifikat boxu sa zamerne neoveruje proti certifikacnym autoritam —
-     * je samopodpisany. Jeho pravost sa potvrdi az parovacim kodom, ktory
-     * televizor ukaze na obrazovke a ktory vstupuje do spolocneho odtlacku.
+     * je samopodpisany. Jeho pravost potvrdi az parovaci kod z obrazovky,
+     * ktory vstupuje do spolocneho odtlacku oboch verejnych klucov.
      */
     public static SSLSocket connect(String host, int port, int timeoutMs) throws Exception {
-        ensureKey();
-        KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-        ks.load(null);
-        KeyManagerFactory kmf = KeyManagerFactory.getInstance(
-                KeyManagerFactory.getDefaultAlgorithm());
-        kmf.init(ks, null);
-
-        SSLContext ctx = SSLContext.getInstance("TLSv1.2");
-        ctx.init(kmf.getKeyManagers(), new TrustManager[] {ACCEPT_ANY_SERVER}, null);
-
-        SSLSocket socket = (SSLSocket) ctx.getSocketFactory().createSocket();
-        socket.connect(new java.net.InetSocketAddress(host, port), timeoutMs);
+        SSLSocket socket = (SSLSocket) context().getSocketFactory().createSocket();
+        socket.connect(new InetSocketAddress(host, port), timeoutMs);
         socket.setSoTimeout(timeoutMs);
         socket.startHandshake();
         return socket;
     }
 
-    /** Odtlacok sa pocita z modulu a exponentu oboch certifikatov. */
+    /** SSLContext s nasim certifikatom; pouziva ho aj test. */
+    public static SSLContext context() throws Exception {
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance(
+                KeyManagerFactory.getDefaultAlgorithm());
+        kmf.init(keyStore(), PASSWORD);
+        SSLContext ctx = SSLContext.getInstance("TLS");
+        ctx.init(kmf.getKeyManagers(), new TrustManager[] {ACCEPT_ANY_SERVER}, null);
+        return ctx;
+    }
+
     public static RSAPublicKey rsaKey(X509Certificate cert) {
         return (RSAPublicKey) cert.getPublicKey();
     }

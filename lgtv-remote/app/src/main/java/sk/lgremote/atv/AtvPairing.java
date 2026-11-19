@@ -170,13 +170,7 @@ public class AtvPairing implements Runnable {
         RSAPublicKey client = AtvCrypto.rsaKey(clientCert);
         RSAPublicKey server = AtvCrypto.rsaKey(serverCert);
 
-        MessageDigest sha = MessageDigest.getInstance("SHA-256");
-        sha.update(AtvCrypto.toBytes(client.getModulus()));
-        sha.update(AtvCrypto.toBytes(client.getPublicExponent()));
-        sha.update(AtvCrypto.toBytes(server.getModulus()));
-        sha.update(AtvCrypto.toBytes(server.getPublicExponent()));
-        sha.update(tail);
-        byte[] digest = sha.digest();
+        byte[] digest = digest(client, server, tail);
 
         if ((digest[0] & 0xFF) != head) {
             throw new InvalidCodeException("kod nesedi — opis ho z obrazovky znova");
@@ -184,7 +178,22 @@ public class AtvPairing implements Runnable {
         return outer().message(40, new Proto.Writer().bytes(1, digest));
     }
 
-    private static byte[] hex(String s) {
+    /**
+     * Spolocny odtlacok oboch stran: verejne kluce klienta aj boxu
+     * a posledne styri znaky kodu z obrazovky.
+     */
+    static byte[] digest(RSAPublicKey client, RSAPublicKey server, byte[] tail)
+            throws Exception {
+        MessageDigest sha = MessageDigest.getInstance("SHA-256");
+        sha.update(AtvCrypto.toBytes(client.getModulus()));
+        sha.update(AtvCrypto.toBytes(client.getPublicExponent()));
+        sha.update(AtvCrypto.toBytes(server.getModulus()));
+        sha.update(AtvCrypto.toBytes(server.getPublicExponent()));
+        sha.update(tail);
+        return sha.digest();
+    }
+
+    static byte[] hex(String s) {
         int n = s.length() / 2;
         byte[] out = new byte[n];
         for (int i = 0; i < n; i++) {
