@@ -3,11 +3,12 @@
 Slovenská idle hra na sídlisku zo 70. rokov (WebGL / Three.js, bez obrázkových textúr).
 
 ## Obsah
-- `zdroj/rit-versus-panelaky.html` – aktuálny zdroj (verzia 1.7). Na mieste `<!--THREEJS-->` sa pri zostavení vkladá Three.js r128.
+- `zdroj/rit-versus-panelaky.html` – aktuálny zdroj (verzia 1.8). Na mieste `<!--THREEJS-->` sa pri zostavení vkladá Three.js r128.
 - `build/index-web.html` – hotová, samostatná webová verzia (Three.js vložená, dá sa otvoriť priamo v prehliadači).
 - `build/build.py`, `build/prefix.html`, `build/three.min.js` – zostavenie webovej verzie.
-- `apk/` – Android APK 1.7.3 (versionCode 11) a stabilná 1.2. Podpísané kľúčom `kluc/rit-release.jks` (alias `rit`, návod v `kluc/README.md`).
+- `apk/` – Android APK 1.8 (versionCode 12) a stabilná 1.2. Podpísané kľúčom `kluc/rit-release.jks` (alias `rit`, návod v `kluc/README.md`).
 - `zalohy/` – staršie verzie a medzistavy:
+  - `rit-1.7.3.html` – posledná verzia pred prestížou
   - `rit-1.7.html` – režim „iba hra“, realistické oblaky
   - `rit-1.6-mapa20.html` – mapa 20×20
   - `rit-1.5.2.html` – Riť podľa nákresu, bez tváre
@@ -17,6 +18,7 @@ Slovenská idle hra na sídlisku zo 70. rokov (WebGL / Three.js, bez obrázkový
   - `rit-versus-panelaky-1.2-stabilna.html`, `rit-textury-v1.html`
 
 ## Verzie
+- **1.8** – Generálna rekonštrukcia (prestíž): od päťročnice VI zbúraš sídlisko a dostaneš vyznamenania ★ (+10 % bony, +2 % sila a zdravie navždy, viac susedov na štart). Plán rastie ×10 namiesto ×16 za päťročnicu. Riť rastie +2 % za päťročnicu a +5 % za rekonštrukciu, nepriatelia +1 %; každých 10 päťročníc jubileum s ohňostrojom, hviezdami na strechách a farebným rámom tabule. Hrdina nosí odznaky za rekonštrukcie.
 - **1.7.3** – pruh života Riti je vždy pod informačnými tabuľami.
 - **1.7.2** – hra siaha až po horný okraj (pod stavový riadok), bez sivých pásov.
 - **1.7.1** – v režime „iba hra“ sa skryje aj horná a spodná lišta telefónu.

@@ -86,6 +86,10 @@ canvas{display:block;touch-action:none}
   background-image:linear-gradient(var(--seam) 2px,transparent 2px),linear-gradient(90deg,var(--seam) 2px,transparent 2px);background-size:100% 118px,152px 100%;background-position:0 58px,40px 0;background-attachment:local}
 
 /* ---- notice board: five-year plan ---- */
+.evo.pres h3{background:var(--enamel)}
+.evo.pres .evo-btn{background:var(--enamel)}
+#medV{color:#ffd65a}
+.era.tier{box-shadow:inset 0 0 0 2px var(--tierc),inset 0 0 0 3px var(--enamel),0 0 0 3px var(--tierc),0 0 14px var(--tierc),0 3px 8px rgba(0,0,0,.35)}
 .evo{background:var(--paper);border-radius:2px;padding:0 0 12px;display:grid;gap:8px;margin-bottom:14px;box-shadow:0 3px 0 rgba(0,0,0,.18),0 6px 14px rgba(0,0,0,.18);position:relative}
 .evo::before,.evo::after{content:"";position:absolute;top:6px;width:9px;height:9px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ff8a7a,#a8261c);box-shadow:0 1px 1px rgba(0,0,0,.4)}
 .evo::before{left:8px}.evo::after{right:8px}
@@ -211,7 +215,7 @@ h4 span{font:700 12px var(--f-sign);letter-spacing:.04em;color:#062826;backgroun
     <canvas id="world" aria-label="Riť versus paneláky. Ťuknutím pošleš blesk, ťahaním posúvaš kamerou."></canvas>
     <div class="logo" role="img" aria-label="Riť versus paneláky"><span class="l1">RIŤ</span><span class="l2">verzus</span><span class="l3">PANELÁKY</span></div>
     <div class="hud">
-      <div class="ess"><span id="essV">0</span><small id="rateV">+0 bonov/s</small></div>
+      <div class="ess"><span id="essV">0</span><small id="rateV">+0 bonov/s</small><small id="medV" hidden></small></div>
       <div class="era"><b id="eraV">Päťročnica I</b><span id="eraN">Stavenisko</span><span id="clock" class="clk"></span></div>
     </div>
     <div id="toast"></div>
@@ -239,6 +243,11 @@ h4 span{font:700 12px var(--f-sign);letter-spacing:.04em;color:#062826;backgroun
         <p id="evoD"></p>
         <div class="bar"><i id="evoBar"></i></div>
         <div><button class="btn evo-btn" id="evoBtn">Splniť plán</button></div>
+      </div>
+      <div class="evo pres" id="presCard">
+        <h3>Generálna rekonštrukcia</h3>
+        <p id="presD"></p>
+        <div><button class="btn evo-btn" id="presBtn">Zbúrať a postaviť znova</button></div>
       </div>
       <div class="mult"><span>Kupovať</span><div class="seg" role="group" aria-label="Množstvo nákupu"><button data-m="1">×1</button><button data-m="5">×5</button><button data-m="10">×10</button><button data-m="max">Max</button></div></div>
       <div id="ups"></div>
@@ -381,8 +390,21 @@ const CLS_OLD={'Bojovník':'Hokejista','Mág':'Elektrikár','Zberač':'Nákupca'
 const power=c=>Math.pow(1.3,c.lvl-1);
 let buffT=0;
 const buffMul=()=>buffT>0?1.5+.1*S.hero.ab.shout:1;
-const atk=c=>2*power(c)*(1+.15*c.str)*(c.cls==='Hokejista'?1.5:1)*buffMul();
-const maxhp=c=>15*power(c)*(1+.15*c.vit)*(c.cls==='Hokejista'?1.4:1);
+/* prestige: every medal is +10 % to all bons and +2 % to attack and health of everyone, for good */
+const MED=()=>S.pres?S.pres.med:0;
+const presMul=()=>1+.1*MED();
+const statMul=()=>1+.02*MED();
+const PRES_ERA=6;
+const medalsFor=t=>Math.floor(Math.pow(Math.max(0,t)/1e7,.2));
+const presGain=()=>S.era>=PRES_ERA?medalsFor(S.total):0;
+// visible growth: the Riť swells every päťročnica and every rebuild, foes a little too
+const ritScale=()=>Math.min(2.2,1+.02*(S.era-1)+.05*(S.pres?S.pres.n:0));
+const foeGrow=()=>1+Math.min(.4,.01*(S.era-1));
+const eraTier=()=>Math.floor(S.era/10);
+const TIERCOL=['','#c9793a','#dfe4e8','#ffd65a','#7fe3ff','#ff7fd0'];
+const tierC=t=>t<TIERCOL.length?TIERCOL[t]:`hsl(${(t*61)%360},90%,70%)`;
+const atk=c=>2*power(c)*(1+.15*c.str)*(c.cls==='Hokejista'?1.5:1)*buffMul()*statMul();
+const maxhp=c=>15*power(c)*(1+.15*c.vit)*(c.cls==='Hokejista'?1.4:1)*statMul();
 const speed=c=>Math.min(3.4,1.25+c.spd*.11+(c.cls==='Nákupca'?.6:0));
 const xpNeed=l=>8*Math.pow(1.32,l-1);
 const xpMult=()=>1+.25*S.up.train;
@@ -391,10 +413,11 @@ const amuMul=()=>Math.pow(1.12,S.hero.gear.amu);
 const CI=()=>Math.pow(3,S.era-1);
 const orbVal=()=>Math.pow(1.35,S.up.val)*eraMul();
 const rainInt=()=>1.7/(1+.2*S.up.rain);
-const popCap=()=>Math.min(40,3+S.era*2);
-const evoCost=()=>500*Math.pow(16,S.era-1);
-const hAtk=()=>{const h=S.hero;return 4*Math.pow(1.2,h.lvl-1)*(1+.1*h.at.str)*Math.pow(1.45,h.gear.wpn)};
-const hHp=()=>{const h=S.hero;return 30*Math.pow(1.18,h.lvl-1)*(1+.1*h.at.vit)*Math.pow(1.4,h.gear.arm)};
+const presCre=()=>Math.min(6,Math.floor(Math.log10(1+(S.pres?S.pres.med:0))*2));
+const popCap=()=>Math.min(40,3+S.era*2)+presCre();
+const evoCost=()=>500*Math.pow(10,S.era-1);
+const hAtk=()=>{const h=S.hero;return 4*Math.pow(1.2,h.lvl-1)*(1+.1*h.at.str)*Math.pow(1.45,h.gear.wpn)*statMul()};
+const hHp=()=>{const h=S.hero;return 30*Math.pow(1.18,h.lvl-1)*(1+.1*h.at.vit)*Math.pow(1.4,h.gear.arm)*statMul()};
 const hSpd=()=>{const h=S.hero;return Math.min(5,1.9+.11*h.at.agi+.28*h.gear.boot)};
 const hCrit=()=>Math.min(.5,.04+.03*S.hero.at.agi);
 const hEss=()=>1+.08*S.hero.at.wis;
@@ -815,6 +838,13 @@ function gPrism(b,x,y,z0,z1,r0,r1,n,col,rot){const c=C01(col);rot=rot||0;
 // rounded blob from stacked prisms
 function gBlob(b,x,y,z,r,h,col,n){n=n||7;const L=[[.0,.55],[.3,.9],[.6,1],[.85,.85],[1,.45],[1.12,0]];
   for(let k=0;k<L.length-1;k++)gPrism(b,x,y,z+L[k][0]*h,z+L[k+1][0]*h,r*L[k][1],r*L[k+1][1],n,col,k*.3)}
+// a thick five-pointed star standing upright, facing along the horizontal direction rot
+function gStar(b,x,y,z,R,col,rot,th){th=th||.03;const c=C01(col),ux=Math.cos(rot),uy=Math.sin(rot),nx=-uy,ny=ux,P_=[];
+  for(let k=0;k<10;k++){const a=Math.PI/2+k*Math.PI/5,r=k%2?R*.42:R;P_.push([Math.cos(a)*r,Math.sin(a)*r])}
+  const pt=(h,v,d)=>T3(x+ux*h+nx*d,y+uy*h+ny*d,z+v);
+  for(const sd of [-1,1]){const n=N3(nx*sd,ny*sd,0);for(let k=0;k<10;k++){const a=P_[k],bb=P_[(k+1)%10];gTri(b,pt(0,0,sd*th),pt(a[0],a[1],sd*th),pt(bb[0],bb[1],sd*th),n,c)}}
+  for(let k=0;k<10;k++){const a=P_[k],bb=P_[(k+1)%10],ex_=bb[1]-a[1],ey=-(bb[0]-a[0]),l=Math.hypot(ex_,ey)||1;
+    gQuad(b,pt(a[0],a[1],-th),pt(bb[0],bb[1],-th),pt(bb[0],bb[1],th),pt(a[0],a[1],th),N3(ux*ex_/l,uy*ex_/l,ey/l),c.map(v=>v*.8))}}
 function gMesh(b,mat){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(b.p,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(b.n,3));g.setAttribute('color',new THREE.Float32BufferAttribute(b.c,3));
   const m=new THREE.Mesh(g,mat||new THREE.MeshLambertMaterial({vertexColors:true}));m.castShadow=true;m.receiveShadow=true;return m}
 /* ---- facade textures, generated in code ---- */
@@ -855,7 +885,7 @@ function topRGB(i,j,hv){const st=ST[j*N+i],v=TC[j*N+i],g=ED.grass;
 function glBuildStatic(){
   GLW.dirty=false;
   if(GSTATIC){GLS.remove(GSTATIC);GSTATIC.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose())}})}
-  GSTATIC=new THREE.Group();GLW.lamps=[];GLW.bmats=[];GLW.laundry=[];GLW.cars=[];GLW.fb=GB();
+  GSTATIC=new THREE.Group();GLW.lamps=[];GLW.bmats=[];GLW.laundry=[];GLW.cars=[];GLW.fb=GB();GLW.sb=GB();
   const tb=GB();
   for(let j=0;j<N;j++)for(let i=0;i<N;i++){
     const hv=th(i,j),b=BL[j*N+i],z=b?tzBase(i,j):tz(i,j),st=ST[j*N+i];
@@ -917,6 +947,8 @@ function glBuildStatic(){
       if(!c.unf&&!c.stair){const r=mulberry(ii*13+jj*7);const vx=ii+.2+r()*.6,vy=jj+.2+r()*.6;gBox(ex,vx-.05,vx+.05,vy-.05,vy+.05,zF+hF+.05,zF+hF+.13,'#8d887e');gBox(ex,vx-.06,vx+.06,vy-.06,vy+.06,zF+hF+.13,zF+hF+.15,'#6e6a62')}
       if(c.unf){gBox(ex,ii+.05,ii+.95,jj+.05,jj+.95,zF+hF,zF+hF+.02,'#7a7468',true)}
     }
+    {const t=eraTier();if(t>0&&((b.id*7+3)%6)<t+1){const sx=(x0+x1)/2,sy=(y0+y1)/2,z0=zF+hF+.05;
+      gBox(ex,sx-.018,sx+.018,sy-.018,sy+.018,z0,z0+.6,'#3a3632',true);gStar(GLW.sb,sx,sy,z0+.86,.3,'#e02a22',longX?Math.PI/2:0);gStar(GLW.sb,sx,sy,z0+.86,.19,'#ffd65a',longX?Math.PI/2:0,.036)}}
     GSTATIC.add(gMesh(ex));
   }
   // props
@@ -930,7 +962,8 @@ function glBuildStatic(){
   if(GLW.fb.p.length){const fm=new THREE.MeshLambertMaterial({vertexColors:true});
     fm.onBeforeCompile=sh=>{sh.uniforms.uT=GLW.uT;sh.vertexShader='uniform float uT;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n transformed.x+=sin(uT*1.5+position.x*1.3+position.z*1.7)*.018;transformed.z+=cos(uT*1.2+position.x*1.9+position.z*.8)*.014;')};
     GSTATIC.add(gMesh(GLW.fb,fm))}
-  GLW.fb=null;
+  if(GLW.sb.p.length){const sm=new THREE.MeshLambertMaterial({vertexColors:true,emissive:0x5a0c08});GLW.smat=sm;GSTATIC.add(gMesh(GLW.sb,sm))}
+  GLW.fb=null;GLW.sb=null;
   GLS.add(GSTATIC);
 }
 function glProp(b,x,y,z,p,i,j){const s=p.sc,r=mulberry(p.s*999|0),hue=p.hue||0;
@@ -1013,7 +1046,7 @@ function mkRit(){
   g.userData={body,skin};GLS.add(g);return g}
 function updRit(g,e,corpse){
   const u=g.userData,t=elapsed;g.visible=true;
-  const S_=1.25;g.position.set(e.x,e.z,e.y);g.rotation.set(0,-(e.hd||0),0);
+  const S_=1.25*ritScale();g.position.set(e.x,e.z,e.y);g.rotation.set(0,-(e.hd||0),0);
   let sq=[1,1,1];if(corpse){const k=Math.min(1,corpse.t/.6);sq=[1+k*.3,1-k*.8,1+k*.3]}
   else if(e.sqT>0){const k=e.sqT/.25;sq=[1+.18*k,1-.28*k,1+.18*k]}else if(!e.gr){const k=clamp(e.vz/6,-1,1);sq=[1-.08*k,1+.14*k,1-.08*k]}else if(e.fartPose>0)sq=[1.06,.95,1.06];
   g.scale.set(S_*sq[0],S_*sq[1],S_*sq[2]);
@@ -1070,13 +1103,20 @@ function glBoom(x,y,z){
   // first gush of blood in every direction, then a fountain that keeps spurting for a moment
   for(let k=0;k<160;k++){const a=rnd()*TAU,el=.2+rnd()*1.1;bloodDrop(x,y,z+.55,Math.cos(a)*Math.cos(el),Math.sin(a)*Math.cos(el),Math.sin(el),2.5+rnd()*4)}
   JETS.push({x,y,z:z+.5,t:0,a:rnd()*TAU})}
+function fireworks(n){if(!GLW.on)return;if(!GBOOM)boomInit();
+  const pal=[[1,.25,.2],[1,.85,.2],[.3,.9,1],[.6,1,.4],[1,.5,.9],[1,1,1]];
+  for(let f=0;f<n;f++){const x=2+rnd()*(N-4),y=2+rnd()*(N-4),z=4.5+rnd()*3,c=pal[(rnd()*pal.length)|0],d=f*.25;
+    for(let k=0;k<55;k++){const a=rnd()*TAU,el=Math.asin(rnd()*2-1),sp=2+rnd()*1.5;
+      boomAdd({x,y,z,vx:Math.cos(a)*Math.cos(el)*sp,vy:Math.sin(a)*Math.cos(el)*sp,vz:Math.sin(el)*sp+1,r:.035+rnd()*.03,t:-d,life:1.4+rnd()*.6,c,g:2.2,fw:true})}}}
 function glBoomStep(){
   if(!GBOOM)return;const dt=FDT,m=new THREE.Matrix4();
   for(let j=JETS.length-1;j>=0;j--){const J=JETS[j];J.t+=dt;if(J.t>1.1){JETS.splice(j,1);continue}
     const pulse=.55+.45*Math.max(0,Math.sin(J.t*TAU*3)),n=Math.ceil(dt*320*pulse*(1-J.t/1.1));
     for(let k=0;k<n;k++){const a=J.a+Math.sin(J.t*5)*.8+(rnd()-.5)*.9,el=1.05+rnd()*.4;bloodDrop(J.x,J.y,J.z,Math.cos(a)*Math.cos(el),Math.sin(a)*Math.cos(el),Math.sin(el),(4.5+rnd()*2.5)*pulse+1.5)}}
   for(let k=0;k<BOOMP.length;k++){const b=BOOMP[k];if(!b)continue;
-    if(b.t<b.life){b.t+=dt;b.vz-=9*dt;b.x+=b.vx*dt;b.y+=b.vy*dt;b.z+=b.vz*dt;
+    if(b.t<0){b.t+=dt;m.makeScale(1e-5,1e-5,1e-5);m.setPosition(b.x,b.z,b.y);GBOOM.setMatrixAt(k,m);continue}
+    if(b.fw){const dr=1-dt*1.6;b.vx*=dr;b.vy*=dr;b.vz*=dr}
+    if(b.t<b.life){b.t+=dt;b.vz-=(b.g||9)*dt;b.x+=b.vx*dt;b.y+=b.vy*dt;b.z+=b.vz*dt;
       const inside=b.x>0&&b.y>0&&b.x<N&&b.y<N,g=inside?groundAt(b.x,b.y):-99;
       if(b.z-b.r<g&&b.z>g-.3){
         if(b.blood){if(rnd()<.35)splatAdd(b.x,b.y,g,b.r*(3+rnd()*4));b.t=b.life}
@@ -1108,7 +1148,7 @@ function glLights(){
   GSUN.intensity=(1-NIGHT)*.95+NIGHT*.4;
   GHEMI.color.setRGB(...mixRGB([.78,.86,1],[.5,.56,.9],NIGHT));GHEMI.groundColor.setRGB(...mixRGB([.5,.46,.38],[.22,.22,.34],NIGHT));
   GHEMI.intensity=.62-.12*NIGHT;
-  const ei=Math.min(1.15,Math.max(0,NIGHT*1.25-.05));for(const m of GLW.bmats)m.emissiveIntensity=ei;
+  const ei=Math.min(1.15,Math.max(0,NIGHT*1.25-.05));if(GLW.smat)GLW.smat.emissive.setRGB(.25+.55*NIGHT,.04+.06*NIGHT,.02);for(const m of GLW.bmats)m.emissiveIntensity=ei;
 }
 function glEmitDynamic(){
   const D=GDYN,DA=GDYNA;D.n=0;DA.n=0;
@@ -1218,7 +1258,7 @@ function toast(h,s){const el=$('#toast');el.innerHTML=h+(s?`<small>${s}</small>`
 
 /* ---------- economy ---------- */
 let rateBucket=0,rateHist=[];
-function earn(v,x,y,z){v*=amuMul();S.ess+=v;S.total+=v;rateBucket+=v;if(x!=null){float(x,y,z+.3,'+'+fmt(v),'ess');SFX.coin(panX(sx_(x,y,z)))}}
+function earn(v,x,y,z){v*=amuMul()*presMul();S.ess+=v;S.total+=v;rateBucket+=v;if(x!=null){float(x,y,z+.3,'+'+fmt(v),'ess');SFX.coin(panX(sx_(x,y,z)))}}
 function giveXp(c,v){
   c.xp+=v*xpMult();
   while(c.xp>=xpNeed(c.lvl)){
@@ -1305,7 +1345,7 @@ function spawnFoe(){
 function spawnButt(){
   const s=Math.pow(3.3,S.era-1);
   let x,y;for(let k=0;k<20;k++){const side=(rnd()*4)|0,t=.5+rnd()*(N-1);x=side===0?.4:side===1?N-.4:t;y=side===2?.4:side===3?N-.4:t;if(!isBld(x,y))break}
-  const e={x,y,z:groundAt(x,y)+5,vx:0,vy:0,vz:0,boss:true,butt:true,r:.6,hp:10*s*35,age:0,atk:2.4*Math.pow(2.9,S.era-1)*2.2,
+  const e={x,y,z:groundAt(x,y)+5,vx:0,vy:0,vz:0,boss:true,butt:true,r:.6*ritScale(),hp:10*s*35,age:0,atk:2.4*Math.pow(2.9,S.era-1)*2.2,
     xp:5*Math.pow(2.2,S.era-1)*10,hitT:0,sp:.7,name:'Riť',last:null,ph:0,face:1,id:++foeCount,fartT:1.5};
   e.mhp=e.hp;E.push(e);
   toast('Prichádza Riť!','Obrovská, ružová a nebezpečne nafúknutá.');log('Na sídlisko dopadla Riť. Susedia si zapchávajú nosy.');SFX.boss();
@@ -2394,6 +2434,7 @@ function heroParts(t,mv,ph,air,swing,ko,look,gear){
         box([.135,.163,-.06,.06,.655,.695],bd)}
       if(look.cape===4){box([-.11,.1,-.15,.15,.6,.68],trim);box([.088,.1,-.014,.014,.28,.66],'#161616');box([.094,.104,-.022,.022,.6,.64],'#9a9ea3')}
     }});
+  const pn=Math.min(5,S&&S.pres?S.pres.n:0);for(let k=0;k<pn;k++){const s0=-.1+k*.045;extra.push({b:[.085,.1,s0,s0+.032,.52,.56],c:[255,205,60]},{b:[.084,.096,s0+.008,s0+.024,.56,.6],c:[216,64,47]})}
   return pts.concat(extra)}
 function residentParts(c,t,mv,ph,air,attack){
   const id=c.id||0;let shirt=hsl2rgb(c.hue,55,55),pants=PANTS[id%4],hair=id%5,hairC=HAIRC[(id>>3)%5];
@@ -2473,7 +2514,7 @@ function foeParts(e){
     top=.95}
   if(e.boss&&!e.butt)crown(L_,top,v===5||v===3?.12:.08);
   return {parts:L_,top:top+(e.boss&&!e.butt?.13:0)}}
-function foeScale(e){if(e.butt)return 1.55;const v=ED.fv;return e.r*(v===3||v===5?2.1:2.5)}
+function foeScale(e){if(e.butt)return 1.55*ritScale();const v=ED.fv;return e.r*(v===3||v===5?2.1:2.5)*foeGrow()}
 function drawFoe3D(e){
   if(e.hurtT>0)e.hurtT-=FDT;if(e.jig>0)e.jig=Math.max(0,e.jig-FDT*1.6);if(e.sqT>0)e.sqT-=FDT;
   const {parts,top}=foeParts(e),S_=foeScale(e);
@@ -2589,6 +2630,21 @@ $('#resetBtn').addEventListener('click',()=>{
   S=fresh();enterEra(false);log('Na zelenej lúke vyrástlo nové sídlisko. Nasťahoval sa hrdina a dvaja susedia.');save();resetArm=0;b.textContent='Postaviť nové sídlisko';b.classList.remove('warn');
   $('#heroName').value=S.hero.name;lookUi();
 });
+let presArm=0;
+$('#presBtn').addEventListener('click',()=>{
+  const g=presGain(),b=$('#presBtn');if(g<1)return;
+  if(!presArm){presArm=1;b.textContent='Naozaj zbúrať? Ťukni znova';setTimeout(()=>{presArm=0;b.textContent='Zbúrať a postaviť znova'},3000);return}
+  presArm=0;b.textContent='Zbúrať a postaviť znova';
+  const p=S.pres||{n:0,med:0,best:0},name=S.hero.name,look=JSON.parse(JSON.stringify(S.hero.look)),mult=S.mult,lg=S.log;
+  p.n++;p.med+=g;p.best=Math.max(p.best||0,S.era);
+  S=fresh();S.pres=p;S.hero.name=name;S.hero.look=look;S.mult=mult;S.log=lg;
+  // a head start that grows with the medals: more starting residents
+  for(let k=0;k<presCre();k++)S.cre.push(newCre());
+  enterEra(false);
+  log(`Generálna rekonštrukcia č. ${p.n}! Sídlisko zbúrali a postavili odznova. Za zásluhy ${g} vyznamenaní ★, spolu ${p.med}: bony ×${fmt(presMul())}, sila a zdravie ×${statMul().toFixed(2)}.`);
+  toast(`Rekonštrukcia č. ${p.n}`,`+${g} ★ · bony ×${fmt(presMul())}`);SFX.fanfare();fireworks(10);save();
+  $('#heroName').value=S.hero.name;lookUi();
+});
 function enterEra(announce){
   ED=eraDef(S.era);G=ED.g/45;
   document.documentElement.style.setProperty('--hue',ED.hue);
@@ -2596,7 +2652,9 @@ function enterEra(announce){
   buildTerrain();
   for(const c of S.cre){c.hp=null;placeCre(c,announce)}
   placeHero(announce);
-  if(announce){toast(`Päťročnica ${roman(S.era)}`,ED.n+' · '+ED.d);log(`Plán splnený! Začína päťročnica ${roman(S.era)}: ${ED.n}. ${ED.d}`);ring(N/2,N/2,1,6,'acc',1)}
+  if(announce&&S.era%10===0){toast(`Jubilejná päťročnica ${roman(S.era)}!`,'Riť je väčšia, na strechách svietia hviezdy');log(`Jubileum! ${S.era}. päťročnica: na paneláky pribudli červené hviezdy a Riť opäť narástla.`);fireworks(14)}
+  else if(announce){toast(`Päťročnica ${roman(S.era)}`,ED.n+' · '+ED.d);}
+  if(announce){log(`Plán splnený! Začína päťročnica ${roman(S.era)}: ${ED.n}. ${ED.d}`);ring(N/2,N/2,1,6,'acc',1)}
   dirtyCre=dirtyLog=true;ui(true);
 }
 let lastUi=0;
@@ -2604,6 +2662,8 @@ function setBtn(id,txt,dis){const b=$('#b-'+id);if(b.textContent!==txt)b.textCon
 function setTxt(id,t){const e=$(id);if(e.textContent!==t)e.textContent=t}
 function ui(force){
   setTxt('#essV',fmt(S.ess));setTxt('#rateV','+'+fmt(S.rate)+' bonov/s');
+  {const m=MED(),mv=$('#medV');mv.hidden=m<1;if(m>0)setTxt('#medV',`★ ${fmt(m)} · bony ×${fmt(presMul())}`);
+   const t=eraTier(),el=document.querySelector('.era');el.classList.toggle('tier',t>0);if(t>0)el.style.setProperty('--tierc',tierC(t))}
   setTxt('#eraV','Päťročnica '+roman(S.era));setTxt('#eraN',ED.n);setTxt('#clock',clockTxt());setTxt('#popV',String(S.cre.length));
   const hh=S.hero;
   const dot=$('#spDot');dot.hidden=hh.sp<1;if(hh.sp>0)setTxt('#spDot',String(hh.sp));
@@ -2613,6 +2673,10 @@ function ui(force){
     setTxt('#evoD',`Splň plán a postav nové sídlisko: bony ×3, viac bytov pre obyvateľov, vyššie paneláky a silnejší nepriatelia (${nd.foe.toLowerCase()}). Hrdina aj susedia si ponechajú levely. Plán: ${fmt(ec)} bonov.`);
     $('#evoBar').style.width=Math.min(100,S.ess/ec*100)+'%';
     $('#evoBtn').disabled=S.ess<ec;
+    {const g=presGain(),nxt=medalsFor(S.total)+1,need=1e7*Math.pow(nxt,5),p=S.pres||{n:0,med:0};
+     setTxt('#presD',(S.era<PRES_ERA?`Od päťročnice ${roman(PRES_ERA)} môžeš sídlisko zbúrať a začať od začiatku s vyznamenaniami ★. `:`Zbúraj sídlisko a začni od päťročnice I. Dostaneš ${fmt(g)} ★ (ďalšie pri ${fmt(need)} bonoch celkom). `)+
+       `Každé ★ navždy pridá +10 % ku všetkým bonom a +2 % k sile a zdraviu hrdinu aj susedov. Ostane meno a vzhľad hrdinu.`+(p.med?` Teraz máš ${fmt(p.med)} ★ (bony ×${fmt(presMul())}), rekonštrukcií ${p.n}, najďalej päťročnica ${roman(Math.max(p.best||1,S.era))}.`:''));
+     $('#presBtn').disabled=g<1;if(!presArm)setTxt('#presBtn',g>=1?`Zbúrať a získať ${fmt(g)} ★`:'Zbúrať a postaviť znova')}
     const bb=S.bolt;setTxt('#boltLv','Lv '+bb.lvl);$('#boltXp').style.width=Math.min(100,bb.xp/boltXpNeed(bb.lvl)*100)+'%';
     setTxt('#boltInfo',`Majstrovstvo: blesk je o ${(bb.lvl-1)*10} % silnejší. Skúsenosti získava každým úderom a zásahom, najviac keď niekoho zničí.`);
     for(const u of BOLTUPS){const pl=boltPlan(u),l=bb.up[u.k];setTxt('#lv-L'+u.k,'lv '+l);setTxt('#d-L'+u.k,u.d());setBtn('L'+u.k,pl.capped?'Max':essLabel(pl),!pl.ok)}
@@ -2650,7 +2714,7 @@ function ui(force){
   }
   if(tab==='kronika'&&(dirtyLog||force)){
     $('#log').innerHTML=S.log.length?S.log.map(l=>`<li><span>${roman(l.e)}</span><div>${l.t}</div></li>`).join(''):'<li class="empty">Zatiaľ sa nič nestalo.</li>';
-    setTxt('#statsV',`Celkom bonov ${fmt(S.total)} · porazených ${S.kills} · bleskov ${S.taps}`);
+    setTxt('#statsV',`Celkom bonov ${fmt(S.total)} · porazených ${S.kills} · bleskov ${S.taps}`+(S.pres&&S.pres.n?` · rekonštrukcií ${S.pres.n}`:''));
     dirtyLog=false;
   }
 }
@@ -2730,7 +2794,7 @@ function start(hd){
   const loaded=(hd&&hd.S)?hd.S:load();
   S=loaded||fresh();
   if(!S.hero)S.hero=newHero();
-  if(!S.bolt)S.bolt=newBolt();if(S.tod==null)S.tod=.12;
+  if(!S.bolt)S.bolt=newBolt();if(S.tod==null)S.tod=.12;if(!S.pres)S.pres={n:0,med:0,best:S.era};
   ED=eraDef(S.era);G=ED.g/45;
   document.documentElement.style.setProperty('--hue',ED.hue);
   glInit();resize();buildTerrain();
