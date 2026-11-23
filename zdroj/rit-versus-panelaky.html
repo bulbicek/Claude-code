@@ -97,6 +97,7 @@ canvas{display:block;touch-action:none}
 
 /* ---- notice board: five-year plan ---- */
 .evo.pres h3{background:var(--enamel)}
+.evo.newg h3{background:#3a3833}.evo.newg .evo-btn{background:#3a3833}.evo.newg .evo-btn.warn{background:var(--red)}
 .evo.pres .evo-btn{background:var(--enamel)}
 #medV{color:#ffd65a}
 .era.tier{box-shadow:inset 0 0 0 2px var(--tierc),inset 0 0 0 3px var(--enamel),0 0 0 3px var(--tierc),0 0 14px var(--tierc),0 3px 8px rgba(0,0,0,.35)}
@@ -232,8 +233,9 @@ h4 span{font:700 12px var(--f-sign);letter-spacing:.04em;color:#062826;backgroun
 .camctl button{height:28px;min-width:28px;padding:0 6px;font-size:12px}
 .camctl button svg{width:16px;height:16px}
 #camFollow{border-radius:14px;font-size:11px}
-.logo{transform:rotate(-5deg) scale(.68);bottom:6px}
-@media (max-width:360px){.logo{transform:rotate(-5deg) scale(.58)}}
+.logo{transform:none;bottom:42px;left:max(2px, env(safe-area-inset-left,0px))}
+.logo svg{display:block;overflow:visible;filter:drop-shadow(0 3px 4px rgba(0,0,0,.45))}
+@media (max-width:360px){.logo svg{width:104px;height:68px}}
 .evbar{bottom:46px;min-width:170px;padding:4px 10px 5px;border-top-width:3px}
 .evbar b{font-size:11.5px}.evbar span{font-size:10px;margin:0 0 3px}.evbar i{height:3px}
 #panel{height:min(40%,380px)}
@@ -259,7 +261,36 @@ h4 span{font:700 12px var(--f-sign);letter-spacing:.04em;color:#062826;backgroun
 <div id="app">
   <div id="stage">
     <canvas id="world" aria-label="Riť versus paneláky. Ťuknutím pošleš blesk, ťahaním posúvaš kamerou."></canvas>
-    <div class="logo" role="img" aria-label="Riť versus paneláky"><span class="l1">RIŤ</span><span class="l2">verzus</span><span class="l3">PANELÁKY</span></div>
+    <div class="logo" role="img" aria-label="Riť versus paneláky"><svg viewBox="0 0 230 150" width="124" height="81" aria-hidden="true">
+      <defs>
+        <linearGradient id="lgPink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb3c8"/><stop offset=".45" stop-color="#ff5a86"/><stop offset="1" stop-color="#d82a5c"/></linearGradient>
+        <linearGradient id="lgCon" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f1ede4"/><stop offset=".55" stop-color="#c9c3b6"/><stop offset="1" stop-color="#8f897c"/></linearGradient>
+        <radialGradient id="lgSky" cx=".5" cy=".55" r=".5"><stop offset="0" stop-color="#ffd27a" stop-opacity=".95"/><stop offset=".6" stop-color="#ff8a4a" stop-opacity=".55"/><stop offset="1" stop-color="#ff6a3a" stop-opacity="0"/></radialGradient>
+        <filter id="lgGrain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="1.3" numOctaves="2" seed="4"/><feColorMatrix values="0 0 0 0 .2 0 0 0 0 .19 0 0 0 0 .17 0 0 0 .55 -.18"/><feComposite in2="SourceGraphic" operator="in"/></filter>
+      </defs>
+      <ellipse cx="122" cy="62" rx="110" ry="52" fill="url(#lgSky)"/>
+      <g fill="#2a2430">
+        <rect x="30" y="18" width="22" height="62"/><rect x="54" y="34" width="30" height="46"/><rect x="152" y="12" width="20" height="68"/><rect x="174" y="30" width="34" height="50"/>
+        <path d="M41 18v-9M38 11h6M162 12v-8M159 6h6" stroke="#2a2430" stroke-width="1.6"/>
+      </g>
+      <g fill="#ffd36a"><rect x="34" y="24" width="3" height="3"/><rect x="42" y="30" width="3" height="3"/><rect x="34" y="42" width="3" height="3"/><rect x="58" y="40" width="3" height="3"/><rect x="68" y="46" width="3" height="3"/><rect x="76" y="40" width="3" height="3"/><rect x="156" y="20" width="3" height="3"/><rect x="163" y="32" width="3" height="3"/><rect x="178" y="36" width="3" height="3"/><rect x="192" y="44" width="3" height="3"/><rect x="200" y="36" width="3" height="3"/></g>
+      <g font-family="Bungee, 'Russo One', Impact, sans-serif" font-size="62" text-anchor="middle" transform="rotate(-6 118 66)">
+        <text x="118" y="86" fill="#5a0f2a" stroke="#2a0a16" stroke-width="10" stroke-linejoin="round" transform="translate(0 7)">RIŤ</text>
+        <text x="118" y="86" fill="#8f1f3e" stroke="#2a0a16" stroke-width="10" stroke-linejoin="round" transform="translate(0 3.5)">RIŤ</text>
+        <text x="118" y="86" fill="url(#lgPink)" stroke="#2a0a16" stroke-width="5" stroke-linejoin="round" paint-order="stroke">RIŤ</text>
+        <path d="M78 50q14-8 30-6" stroke="#fff" stroke-width="4" stroke-linecap="round" fill="none" opacity=".7"/>
+        <circle cx="72" cy="56" r="2.6" fill="#fff" opacity=".8"/>
+      </g>
+      <text x="116" y="105" font-family="'Barlow Condensed', 'Russo One', sans-serif" font-weight="700" font-style="italic" font-size="16" letter-spacing="2.5" text-anchor="middle" fill="#fff" stroke="#1d1c1a" stroke-width="3.6" stroke-linejoin="round" paint-order="stroke" transform="rotate(-4 116 100)">VERZUS</text>
+      <g font-family="Bungee, 'Russo One', Impact, sans-serif" font-size="27" text-anchor="middle" transform="rotate(-3 116 130)">
+        <text x="116" y="137" fill="#3b3833" stroke="#151412" stroke-width="7" stroke-linejoin="round" transform="translate(0 4)">PANELÁKY</text>
+        <text x="116" y="137" fill="url(#lgCon)" stroke="#151412" stroke-width="3.6" stroke-linejoin="round" paint-order="stroke">PANELÁKY</text>
+        <text x="116" y="137" fill="#fff" filter="url(#lgGrain)">PANELÁKY</text>
+        <path d="M58 119l5 7-3 6M101 118l-3 8 4 5M139 120l4 6-2 7M170 119l-4 8 3 5" stroke="#3b3833" stroke-width="1.3" fill="none"/>
+      </g>
+      <g fill="#6e685d" stroke="#1d1c1a" stroke-width="1.2"><path d="M26 120l7-3 3 6-7 2z"/><path d="M208 108l6 2-2 6-6-2z"/><path d="M198 136l5-1 1 5-5 1z"/><path d="M16 96l5 1-1 5-5-2z"/></g>
+      <g fill="#ffd36a"><path d="M214 18l2 7 7 2-7 2-2 7-2-7-7-2 7-2z"/><path d="M22 34l1.5 4.5 4.5 1.5-4.5 1.5-1.5 4.5-1.5-4.5-4.5-1.5 4.5-1.5z"/></g>
+    </svg></div>
     <div class="hud">
       <div class="ess"><span id="essV">0</span><small id="rateV">+0 bonov/s</small><small id="medV" hidden></small></div>
       <div class="era"><b id="eraV">Päťročnica I</b><span id="eraN">Stavenisko</span><span id="clock" class="clk"></span></div>
@@ -340,6 +371,11 @@ h4 span{font:700 12px var(--f-sign);letter-spacing:.04em;color:#062826;backgroun
     </div>
     <div class="pane" id="pane-bytosti" hidden></div>
     <div class="pane" id="pane-kronika" hidden>
+      <div class="evo newg">
+        <h3>Nová hra</h3>
+        <p>Začni úplne od nuly: zmaže sa sídlisko, bony, susedia, hrdina s levelmi aj vzhľadom, vyznamenania ★ a kronika. Nastavenia zvuku a grafiky ostanú.</p>
+        <div><button class="btn evo-btn" id="newGameBtn">Začať novú hru</button></div>
+      </div>
       <div class="sets">
         <label class="tg">Hudba<input type="checkbox" id="setMus" checked><span class="sl"></span></label>
         <label class="tg">Zvuky<input type="checkbox" id="setSfx" checked><span class="sl"></span></label>
@@ -347,7 +383,7 @@ h4 span{font:700 12px var(--f-sign);letter-spacing:.04em;color:#062826;backgroun
         <p class="gfxnote" id="gfxNote"></p>
       </div>
       <ul class="log" id="log"></ul>
-      <div class="foot"><span id="statsV"></span><button id="resetBtn">Postaviť nové sídlisko</button></div>
+      <div class="foot"><span id="statsV"></span></div>
     </div>
   </div>
 </div>
@@ -1064,7 +1100,7 @@ function glBuildStatic(){
       if(!c.unf&&!c.stair){const r=mulberry(ii*13+jj*7);const vx=ii+.2+r()*.6,vy=jj+.2+r()*.6;gBox(ex,vx-.05,vx+.05,vy-.05,vy+.05,zF+hF+.05,zF+hF+.13,'#8d887e');gBox(ex,vx-.06,vx+.06,vy-.06,vy+.06,zF+hF+.13,zF+hF+.15,'#6e6a62')}
       if(c.unf){gBox(ex,ii+.05,ii+.95,jj+.05,jj+.95,zF+hF,zF+hF+.02,'#7a7468',true)}
     }
-    {const t=eraTier();if(t>0&&((b.id*7+3)%6)<t+1){const sx=(x0+x1)/2,sy=(y0+y1)/2,z0=zF+hF+.05;
+    {const t=eraTier();if(t>0&&((b.id*7+3)%15)<Math.min(6,t+1)){const sx=(x0+x1)/2,sy=(y0+y1)/2,z0=zF+hF+.05;
       gBox(ex,sx-.018,sx+.018,sy-.018,sy+.018,z0,z0+.6,'#3a3632',true);gStar(GLW.sb,sx,sy,z0+.86,.3,'#e02a22',longX?Math.PI/2:0);gStar(GLW.sb,sx,sy,z0+.86,.19,'#ffd65a',longX?Math.PI/2:0,.036)}}
     GSTATIC.add(gMesh(ex));
   }
@@ -1192,6 +1228,17 @@ function dogStep(D,DA,c){
     {b:[-.025,.025,-.02,.02,0,.12],c:dk,p:[0,0,0],r2:0,rl:Math.sin(elapsed*14)*.6,p2:[-.14,0,.15]}];
   for(const [a,s_,ph] of [[.09,.035,0],[.09,-.035,Math.PI],[-.09,.035,Math.PI],[-.09,-.035,0]])P_.push({b:[-.018,.018,-.016,.016,-.1,0],c:dk,p:[a,s_,.11],r:Math.sin(g.ph+ph)*Math.min(1,v)*.7});
   emitModel(D,DA,g.x,g.y,g.z,g.hd,1,P_,{})}
+// flocks as small 3D birds: body, head, beak, tail and wings hinged at the shoulder and the wrist
+function glBirds(D,DA){
+  const dk=[46,44,52],lt=[92,88,100],bk=[232,170,60];
+  for(const f of FLOCKS){const hd=Math.atan2(f.dy,f.dx);
+    for(const b of f.b){const [x,y,z]=birdPos(f,b);if(x<-2||y<-2||x>N+2||y>N+2)continue;
+      const glide=Math.sin(f.t*.9+b.ph)>.6,fl=glide?.1:Math.sin(f.t*b.fr+b.ph)*.7,tip=glide?.04:Math.sin(f.t*b.fr+b.ph-.7)*.6;
+      const P_=[{b:[-.07,.07,-.024,.024,-.018,.024],c:dk},{b:[.06,.1,-.019,.019,-.004,.03],c:dk},{b:[.1,.128,-.006,.006,.004,.014],c:bk},{b:[-.13,-.06,-.03,.03,-.004,.006],c:dk}];
+      for(const sd of [-1,1]){
+        P_.push({b:[-.034,.034,sd>0?0:-.11,sd>0?.11:0,-.005,.005],c:lt,p:[0,sd*.02,.01],rl:sd*fl});
+        P_.push({b:[-.028,.018,sd>0?0:-.1,sd>0?.1:0,-.004,.004],c:dk,p2:[0,sd*.11*Math.cos(fl),.11*Math.sin(fl)],p:[0,sd*.02,.01],rl:sd*(fl+tip)})}
+      emitModel(D,DA,x,y,z,hd,b.sc*.85,P_,{})}}}
 function glTraffic(D,DA){
   const cars=GLW.cars,dt=FDT;
   for(const c of cars){
@@ -1295,7 +1342,7 @@ function glEmitDynamic(){
   for(const e of E){if(e.butt)continue;if(e.hurtT>0)e.hurtT-=FDT;const {parts}=foeParts(e);emitModel(D,DA,e.x,e.y,e.z,heading(e,.1),foeScale(e),parts,{flash:e.hurtT>0})}
   const gold=[1,.8,.2];
   for(const o of O){const a=elapsed*4+o.sd,s=.075*o.big;emitModel(D,DA,o.x,o.y,o.z+.08+Math.sin(elapsed*3+o.sd)*.02,a,1,[{b:[-.018,.018,-s,s,-s,s],c:[255,205,60]},{b:[-.022,-.017,-s*.55,s*.55,-s*.55,s*.55],c:[255,236,140]},{b:[.017,.022,-s*.55,s*.55,-s*.55,s*.55],c:[255,236,140]}],{})}
-  glTraffic(D,DA);glLaundry(D,DA);
+  glTraffic(D,DA);glLaundry(D,DA);glBirds(D,DA);
   for(const [g_,M] of [[D,GDYN],[DA,GDYNA]]){const geo=M.g;geo.setDrawRange(0,g_.n);for(const k of ['position','normal','color']){const at=geo.attributes[k];at.updateRange.offset=0;at.updateRange.count=g_.n*3;at.needsUpdate=true}}
 }
 function glRit(){
@@ -2393,7 +2440,7 @@ function draw(){
   drawFX(false);
 }
 function drawFX(gl){
-  if(FLOCKS.length){cx.lineCap='round';cx.lineJoin='round';
+  if(FLOCKS.length&&!gl){cx.lineCap='round';cx.lineJoin='round';
     for(const f of FLOCKS){
       if(SHA>.02)for(const b of f.b){const [x,y,z]=birdPos(f,b);if(x<0||y<0||x>N||y>N)continue;const g=groundAt(x,y);const p=P(x,y,g);const h=z-g;
         cx.fillStyle=`rgba(10,12,30,${SHA*.5})`;cx.beginPath();cx.ellipse(p[0]+SVS[0]*h,p[1]+SVS[1]*h,SC*.05,SC*.025,0,0,TAU);cx.fill()}
@@ -2855,11 +2902,15 @@ function lookUi(){const L=S.hero.look;PARTS.forEach(p=>{if(L[p.k]>=p.l.length)L[
   $('#swTrim').querySelectorAll('button').forEach((b,i)=>b.setAttribute('aria-pressed',i===L.trim));}
 $('#evoBtn').addEventListener('click',()=>{if(S.ess<evoCost())return;S.ess-=evoCost();S.era++;SFX.fanfare();enterEra(true);save()});
 let resetArm=0;
-$('#resetBtn').addEventListener('click',()=>{
-  const b=$('#resetBtn');
-  if(!resetArm){resetArm=1;b.textContent='Naozaj? Ťukni znova';b.classList.add('warn');setTimeout(()=>{resetArm=0;b.textContent='Postaviť nové sídlisko';b.classList.remove('warn')},3000);return}
-  S=fresh();enterEra(false);log('Na zelenej lúke vyrástlo nové sídlisko. Nasťahoval sa hrdina a dvaja susedia.');save();resetArm=0;b.textContent='Postaviť nové sídlisko';b.classList.remove('warn');
-  $('#heroName').value=S.hero.name;lookUi();
+$('#newGameBtn').addEventListener('click',()=>{
+  const b=$('#newGameBtn');
+  if(!resetArm){resetArm=1;b.textContent='Naozaj všetko zmazať? Ťukni znova';b.classList.add('warn');setTimeout(()=>{resetArm=0;b.textContent='Začať novú hru';b.classList.remove('warn')},3500);return}
+  resetArm=0;b.textContent='Začať novú hru';b.classList.remove('warn');
+  S=fresh();S.pres={n:0,med:0,best:1};S.log=[];EV=null;$('#evBar').hidden=true;
+  if(WALK)setWalk(false);cam.T.zoom=1.05;cam.T.x=cam.T.y=N/2;
+  enterEra(false);log('Nová hra! Na zelenej lúke vyrástlo nové sídlisko. Nasťahoval sa hrdina a dvaja susedia.');save();
+  $('#heroName').value=S.hero.name;lookUi();dirtyLog=dirtyCre=true;toast('Nová hra','Sídlisko od nuly');SFX.fanfare();
+  tab='svet';document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab));PANES.forEach(t=>$('#pane-'+t).hidden=t!==tab);ui(true);
 });
 let presArm=0;
 $('#presBtn').addEventListener('click',()=>{
