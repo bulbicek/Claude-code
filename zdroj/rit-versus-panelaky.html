@@ -218,6 +218,42 @@ h4 span{font:700 12px var(--f-sign);letter-spacing:.04em;color:#062826;backgroun
 .foot button{font:700 13px var(--f-sign);letter-spacing:.06em;text-transform:uppercase;color:#fff;background:#6d6a63;border:0;border-radius:4px;padding:7px 10px;cursor:pointer;box-shadow:0 2px 0 rgba(0,0,0,.3)}
 .foot button.warn{background:var(--red)}
 @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+
+/* ---- compact layout: smaller boards, slimmer panel, a panel you can fold away ---- */
+.hud{gap:8px;padding-top:calc(6px + var(--sat, env(safe-area-inset-top,0px)));padding-left:max(8px, env(safe-area-inset-left,0px));padding-right:max(8px, env(safe-area-inset-right,0px))}
+.ess{font-size:18px;padding:4px 8px 4px;min-width:74px;border-radius:5px}
+.ess small{font-size:10px;margin-top:2px;letter-spacing:.04em}
+.era{padding:3px 8px 4px;min-width:96px}
+.era b{font-size:12.5px}.era span{font-size:10.5px;line-height:1.2}
+.hint{top:calc(62px + var(--sat, env(safe-area-inset-top,0px)));font-size:11px;padding:5px 8px}
+#toast{top:calc(var(--hudb, 60px) + 20px);transform:translate(-50%,0);font-size:14px;padding:5px 10px 6px;border-radius:4px;width:auto;max-width:min(80%,280px);box-shadow:inset 0 0 0 1.5px #fff,inset 0 0 0 3px var(--red),0 3px 10px rgba(0,0,0,.4)}
+#toast small{font-size:11px;margin-top:1px}
+.camctl{bottom:6px;gap:4px;padding:4px;right:max(6px, env(safe-area-inset-right,0px))}
+.camctl button{height:28px;min-width:28px;padding:0 6px;font-size:12px}
+.camctl button svg{width:16px;height:16px}
+#camFollow{border-radius:14px;font-size:11px}
+.logo{transform:rotate(-5deg) scale(.68);bottom:6px}
+@media (max-width:360px){.logo{transform:rotate(-5deg) scale(.58)}}
+.evbar{bottom:46px;min-width:170px;padding:4px 10px 5px;border-top-width:3px}
+.evbar b{font-size:11.5px}.evbar span{font-size:10px;margin:0 0 3px}.evbar i{height:3px}
+#panel{height:min(40%,380px)}
+#panel::before{height:8px}
+.tabs{padding-top:5px;padding-bottom:5px;gap:4px}
+.tabs button{font-size:clamp(11px,3vw,13px);padding:5px 2px 6px}
+.pane{padding-block:8px 14px}
+/* tap the open tab again to fold the panel down to its tabs */
+.evo{padding-bottom:9px;gap:6px;margin-bottom:10px}
+.evo h3{font-size:13.5px;padding:6px 20px}
+.evo p{font-size:11.5px;line-height:1.38}
+.evo .btn,.evo-btn{padding:7px 10px}
+.up{padding:6px 10px 6px 18px;margin-bottom:6px;gap:8px}
+.up b{font-size:13px}.up p{font-size:11px;line-height:1.32}
+.btn{padding:7px 9px;min-width:74px;font-size:12px}
+.mult{margin:0 0 8px;font-size:11.5px}.mult .seg{padding:4px 7px;gap:7px}.mult .seg button{width:32px;height:32px;font-size:11px}
+.hint{top:calc(var(--hudb, 60px) + 22px)}
+.pmini #panel{height:auto}.pmini .pane{display:none!important}.pmini .tabs{border-bottom:0}
+.tabs button[aria-selected="true"]::after{content:" ▾";font-size:.85em}
+.pmini .tabs button[aria-selected="true"]::after{content:" ▴"}
 </style>
 
 <div id="app">
@@ -798,7 +834,7 @@ function unproject(sx,sy){
   }
   return [x,y,z];
 }
-function resize(){
+function resize(){setTimeout(()=>typeof measureHud==="function"&&measureHud(),50);
   const rc=cv.parentElement.getBoundingClientRect();
   const ql=QMODE==='eco'?2:QMODE==='high'?0:QL;
   DPR=Math.max(1,Math.min(2,window.devicePixelRatio||1)*QS[ql]);
@@ -2725,16 +2761,17 @@ function drawCorpse(o){const t=o.t,k=Math.min(1,t/.6);
 // big boss bar for Riť
 // the boss bar sits just under the info boards, wherever they ended up (status bar, notch, font size)
 let HUDB=80,hudM=0;
-function measureHud(){try{const st=$('#stage').getBoundingClientRect();let b=0;for(const el of document.querySelectorAll('.hud>div')){const r=el.getBoundingClientRect();if(r.height)b=Math.max(b,r.bottom)}if(b)HUDB=b-st.top+8}catch(e){}}
+function measureHud(){try{const st=$('#stage').getBoundingClientRect();let b=0;for(const el of document.querySelectorAll('.hud>div')){const r=el.getBoundingClientRect();if(r.height)b=Math.max(b,r.bottom)}if(b){HUDB=b-st.top+6;document.documentElement.style.setProperty('--hudb',HUDB+'px')}}catch(e){}}
 function drawBossBar(){const e=E.find(x=>x.butt);if(!e)return;
   if(hudM--<=0){measureHud();hudM=30}
-  const w=Math.min(W-40,280),x=(W-w)/2,y=HUDB+(e.hurtT>0?(rnd()-.5)*3:0),f=clamp(e.hp/e.mhp,0,1);
-  cx.fillStyle='rgba(20,10,14,.82)';cx.fillRect(x-4,y-4,w+8,30);
-  cx.fillStyle='#3a1a22';cx.fillRect(x,y+12,w,10);
-  const g=cx.createLinearGradient(x,0,x+w,0);g.addColorStop(0,'#ff5a86');g.addColorStop(1,'#ffb08a');cx.fillStyle=g;cx.fillRect(x,y+12,w*f,10);
-  cx.fillStyle='rgba(255,255,255,.35)';cx.fillRect(x,y+12,w*f,3);
-  cx.font=`12px ${DF}`;cx.textAlign='left';cx.fillStyle='#ff8fb0';cx.fillText('RIŤ',x+2,y+9);
-  cx.textAlign='right';cx.fillStyle='#f4efe2';cx.fillText(fmt(Math.max(0,e.hp))+' / '+fmt(e.mhp),x+w-2,y+9);cx.textAlign='center'}
+  // one slim line: name and numbers sit inside the bar
+  const w=Math.min(W-60,230),x=(W-w)/2,y=HUDB+(e.hurtT>0?(rnd()-.5)*3:0),f=clamp(e.hp/e.mhp,0,1);
+  cx.fillStyle='rgba(20,10,14,.82)';cx.fillRect(x-2,y-2,w+4,16);
+  cx.fillStyle='#3a1a22';cx.fillRect(x,y,w,12);
+  const g=cx.createLinearGradient(x,0,x+w,0);g.addColorStop(0,e.phase===2?'#ff2a40':'#ff5a86');g.addColorStop(1,e.phase?'#ff7a5a':'#ffb08a');cx.fillStyle=g;cx.fillRect(x,y,w*f,12);
+  cx.fillStyle='rgba(255,255,255,.3)';cx.fillRect(x,y,w*f,3);
+  cx.font=`bold 9.5px ${DF}`;cx.textBaseline='middle';cx.textAlign='left';cx.fillStyle='#fff';cx.fillText(e.phase===2?'RIŤ ZÚRI':e.phase?'RIŤ SA HNEVÁ':'RIŤ',x+4,y+6.5);
+  cx.textAlign='right';cx.fillText(fmt(Math.max(0,e.hp))+' / '+fmt(e.mhp),x+w-4,y+6.5);cx.textAlign='center';cx.textBaseline='alphabetic'}
 
 /* ---------- hero preview ---------- */
 const pv=$('#heroPrev'),pc=pv.getContext('2d');
@@ -2760,7 +2797,11 @@ function drawPreview_(){
 /* ---------- UI ---------- */
 let dirtyCre=true,dirtyLog=true,tab='svet',sub='up';
 const PANES=['svet','hrdina','bytosti','kronika'];
+function setMini(on){document.body.classList.toggle('pmini',on);try{localStorage.setItem('rit-pmini',on?'1':'0')}catch(e){}requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')))}
+try{if(localStorage.getItem('rit-pmini')==='1')document.body.classList.add('pmini')}catch(e){}
 document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>{
+  if(b.dataset.tab===tab){setMini(!document.body.classList.contains('pmini'));SFX.click();return}
+  if(document.body.classList.contains('pmini'))setMini(false);
   tab=b.dataset.tab;document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));
   PANES.forEach(t=>$('#pane-'+t).hidden=t!==tab);dirtyCre=dirtyLog=true;ui(true);SFX.click();
 }));
