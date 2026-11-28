@@ -389,7 +389,7 @@ class Game {
       else if (t === 'pline') { ok = w.canPline(x, y); c = w.water[i] ? COST.plineWater : COST.pline; }
       else if (t === 'pipe') { ok = w.canPipe(x, y); c = COST.pipe; }
       else if (t.startsWith('z:')) { const z = +t.slice(2); ok = w.canZone(x, y, z); c = zoneDense(z) ? COST.zoneDense : COST.zoneLight; }
-      else if (t === 'bulldoze') { ok = !!(w.bid[i] || w.level[i] || w.road[i] || w.pline[i] || w.rubble[i] || w.tree[i] || w.zone[i]); c = w.bid[i] ? 10 : w.level[i] ? 5 : 1; }
+      else if (t === 'bulldoze') { ok = !!(w.bid[i] || w.level[i] || w.road[i] || w.rail[i] || w.pline[i] || w.rubble[i] || w.tree[i] || w.zone[i]); c = w.bid[i] ? 10 : w.level[i] ? 5 : 1; }
       else if (t === 'dezone') { ok = !!w.zone[i]; c = 1; }
       else if (t === 'tree') { ok = !w.water[i] && w.isEmpty(i) && !w.zone[i] && w.tree[i] < 3; c = COST.tree; }
       else if (t === 'level') { ok = true; }
