@@ -1,0 +1,60 @@
+name: Mestopolis Android APK
+
+on:
+  push:
+    branches:
+      - ccr-d820aee6-cdhzp5   # predvolená vetva
+      - ccr-d9e4f373-nz8m4z   # vývojová vetva hry
+    paths:
+      - 'mestopolis/**'
+      - 'mestopolis-android/**'
+      - '.github/workflows/mestopolis-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mestopolis-apk
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mestopolis-android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Zostaviť APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease -PversionCode=${{ github.run_number }}
+          cp app/build/outputs/apk/release/app-release.apk ../Mestopolis.apk
+          ls -la ../Mestopolis.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Mestopolis-apk
+          path: Mestopolis.apk
+
+      - name: Zverejniť na stiahnutie (GitHub Release)
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=mestopolis-apk
+          NOTES="Mestopolis – Android aplikácia, verzia 1.${{ github.run_number }} (commit ${GITHUB_SHA::8}).
+
+          Inštalácia: stiahnite Mestopolis.apk v telefóne a otvorte ho. Android sa môže spýtať na povolenie inštalovať aplikácie z prehliadača – povoľte ho."
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "Mestopolis – Android APK" --notes "$NOTES" --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" Mestopolis.apk --clobber
+          gh release edit "$TAG" --notes "$NOTES"

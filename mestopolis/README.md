@@ -43,8 +43,12 @@ Dotykové ovládanie: 1 prst = nástroj (s info nástrojom posun mapy, ťuk = in
 - **Služby**: polícia, hasiči, nemocnica, škola, univerzita, parky, radnica, štadión, prístav, letisko, arkológia (2050).
 - **Ekonomika**: dane po sektoroch, financovanie služieb, ročná bilancia, grafy.
 - **Dátové mapy**: elektrina, voda, hodnota pozemkov, znečistenie, kriminalita, doprava, hustota, pokrytie službami.
+- **Doprava**: cesty, železnica (mosty cez vodu, priecestia), stanice; vlaky jazdia medzi stanicami a odľahčujú cesty.
+- **Odpad**: smeti z budov, skládka (plní sa), spaľovňa (vyrába elektrinu), recyklácia; mapa odpadu.
+- **Cintoríny**: úmrtnosť závisí od zdravotníctva, cintorín sa plní, krematórium; bez nich klesá záujem o bývanie.
+- **Parky**: malý a veľký park, ihrisko, kvetinová záhrada, fontána, jazierko, športové ihrisko, botanická záhrada, ZOO, zábavný park.
 - **Katastrofy**: požiare (šíria sa, hasiči pomáhajú), tornádo, zemetrasenie, havária jadrovej elektrárne.
-- **Ukladanie**: localStorage (aj automatické), export/import do súboru.
+- **Ukladanie**: tlačidlo 💾 s potvrdením, automatické ukladanie aj pri odchode z aplikácie, posledné mesto sa pri spustení nahrá samo; export/import do súboru.
 
 ## Ovládanie
 

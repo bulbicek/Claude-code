@@ -2,6 +2,9 @@ import { BUILDINGS, POP, zoneKind, zoneDense, powerUse, waterUse, SEA, MILESTONE
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
+// trvanie výstavby podľa úrovne zástavby (v rýchlych krokoch)
+const CONS_T = [0, 6, 8, 10, 13, 16];
+
 export class Sim {
   constructor(world, hooks) {
     this.w = world;
@@ -23,6 +26,9 @@ export class Sim {
     this.computePower();
     this.computeWater();
     this.computeCoverage();
+    this.computeRail();
+    this.computeGarbage();
+    this.computeDeaths();
     this.computeTraffic();
     this.computePollution();
     this.computeCrime();
@@ -106,14 +112,14 @@ export class Sim {
       i => w.zone[i] > 0 || w.pline[i] || w.bid[i] > 0,
       b => {
         const d = BUILDINGS[b.type];
-        if (!d.power) return 0;
+        if (!d.power || b.cons > 0) return 0;
         let p = d.power;
         if (b.type === 'wind') p *= 0.6 + 0.4 * Math.min(1, (w.tileMax(b.x, b.y) - SEA) / 8);
         if (b.type === 'hydro') p *= 1;
         if (b.type === 'solar') p *= 0.85;
         return p;
       },
-      i => (w.level[i] > 0 && !w.abandoned[i] ? powerUse(w.level[i]) : w.bid[i] ? 0.25 : 0.02),
+      i => (w.cons[i] > 0 ? 0.05 : w.level[i] > 0 && !w.abandoned[i] ? powerUse(w.level[i]) : w.bid[i] ? 0.25 : 0.02),
       w.powered
     );
     w.state.stats.powerSupply = r.supply; w.state.stats.powerDemand = r.demand;
@@ -126,7 +132,7 @@ export class Sim {
       i => w.pipe[i] || w.zone[i] > 0 || w.bid[i] > 0,
       b => {
         const d = BUILDINGS[b.type];
-        if (!d.water || !b.powered) return 0;
+        if (!d.water || !b.powered || b.cons > 0) return 0;
         let v = d.water;
         if (b.type === 'pump') v *= this.waterDist[w.ti(b.x, b.y)] <= 1 ? 1.8 : 1;
         return v;
@@ -154,17 +160,143 @@ export class Sim {
     };
     for (const b of w.buildings.values()) {
       const d = BUILDINGS[b.type];
+      if (b.cons > 0) continue;
       const cx = b.x + b.size / 2, cy = b.y + b.size / 2;
       const pf = b.powered ? 1 : 0.5;
       if (d.radius && d.fund) {
         const f = st.funding[d.fund] / 100;
         const arr = { police: w.police, fire: w.fireCov, health: w.health, edu: w.edu }[d.fund];
-        stamp(arr, cx, cy, d.radius * (0.6 + 0.4 * f), 230 * f * pf);
+        if (arr) stamp(arr, cx, cy, d.radius * (0.6 + 0.4 * f), 230 * f * pf);
       }
       if (d.park) stamp(w.park, cx, cy, d.radius, d.park);
     }
     // stromy = malý parkový efekt
     for (let i = 0; i < N * N; i++) if (w.tree[i]) w.park[i] = Math.min(255, w.park[i] + w.tree[i] * 8);
+  }
+
+  stampArr(arr, cx, cy, rad, strength) {
+    const N = this.w.N, r2 = rad * rad;
+    for (let y = Math.max(0, Math.floor(cy - rad)); y <= Math.min(N - 1, cy + rad); y++)
+      for (let x = Math.max(0, Math.floor(cx - rad)); x <= Math.min(N - 1, cx + rad); x++) {
+        const dd = (x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2;
+        if (dd > r2) continue;
+        const i = y * N + x;
+        arr[i] = Math.min(255, arr[i] + strength * Math.pow(1 - Math.sqrt(dd) / rad, 0.6));
+      }
+  }
+
+  // ---- železnica: siete koľají, stanice, pokrytie vlakom ----
+  computeRail() {
+    const w = this.w, N = w.N;
+    const comp = this.railComp && this.railComp.length === N * N ? this.railComp : (this.railComp = new Int32Array(N * N));
+    comp.fill(0);
+    let id = 0;
+    for (let s0 = 0; s0 < N * N; s0++) {
+      if (!w.rail[s0] || comp[s0]) continue;
+      id++; comp[s0] = id;
+      const q = [s0];
+      for (let h = 0; h < q.length; h++) {
+        const i = q[h], x = i % N, y = (i / N) | 0;
+        for (const j of [x > 0 ? i - 1 : -1, x < N - 1 ? i + 1 : -1, y > 0 ? i - N : -1, y < N - 1 ? i + N : -1])
+          if (j >= 0 && w.rail[j] && !comp[j]) { comp[j] = id; q.push(j); }
+      }
+    }
+    // stanice a ich siete
+    const count = new Map();
+    this.stations = [];
+    for (const b of w.buildings.values()) {
+      if (b.type !== 'station' || b.cons > 0) continue;
+      const comps = new Set(), tiles = [];
+      for (let dy = -1; dy <= b.size; dy++) for (let dx = -1; dx <= b.size; dx++) {
+        if ((dx === -1 || dx === b.size) === (dy === -1 || dy === b.size)) continue; // len okraj bez rohov
+        const tx = b.x + dx, ty = b.y + dy;
+        if (!w.inb(tx, ty)) continue;
+        const i = w.ti(tx, ty);
+        if (w.rail[i]) { comps.add(comp[i]); tiles.push(i); }
+      }
+      for (const c of comps) count.set(c, (count.get(c) || 0) + 1);
+      this.stations.push({ b, comps, tiles });
+    }
+    this.activeRail = new Set([...count].filter(([, n]) => n >= 2).map(([c]) => c));
+    w.trainCov.fill(0);
+    for (const st of this.stations) {
+      st.active = [...st.comps].some(c => this.activeRail.has(c));
+      if (st.active) this.stampArr(w.trainCov, st.b.x + st.b.size / 2, st.b.y + st.b.size / 2, BUILDINGS.station.radius, 230);
+    }
+  }
+
+  // ---- odpad: produkcia, zvoz, skládky ----
+  computeGarbage() {
+    const w = this.w, N = w.N, st = w.state, fund = (st.funding.waste ?? 100) / 100;
+    w.garbCov.fill(0);
+    let capacity = 0, landfillCap = 0;
+    const landfills = [];
+    for (const b of w.buildings.values()) {
+      const d = BUILDINGS[b.type];
+      if (!d.garbage || b.cons > 0) continue;
+      if (b.type === 'landfill' && (b.fill || 0) >= d.capacity) { if (!b.full) { b.full = true; this.news('Skládka odpadu je plná! Postavte novú skládku, spaľovňu alebo recykláciu.', 'bad'); } continue; }
+      if (b.type === 'recycling' && !b.powered) continue;
+      this.stampArr(w.garbCov, b.x + b.size / 2, b.y + b.size / 2, d.radius * (0.7 + 0.3 * fund), 240 * Math.max(0.2, fund));
+      capacity += d.garbage * fund;
+      if (b.type === 'landfill') { landfills.push(b); landfillCap += d.garbage * fund; }
+    }
+    // koľko odpadu by sa dalo zviezť (len z pokrytého územia)
+    let demand = 0, prod = 0;
+    const gen = i => (w.level[i] > 0 && !w.abandoned[i] ? 0.8 + w.pop[i] * (zoneKind(w.zone[i]) === 3 ? 0.08 : 0.05) : 0);
+    for (let i = 0; i < N * N; i++) { const g = gen(i); if (!g) continue; prod += g; if (w.garbCov[i] > 30) demand += g; }
+    const ratio = demand > 0 ? Math.min(1, capacity / demand) : 1;
+    const collected = Math.min(capacity, demand);
+    let sum = 0, cnt = 0;
+    const bucket = this.garbBucket && this.garbBucket.length === N * N ? this.garbBucket : (this.garbBucket = new Uint8Array(N * N));
+    for (let i = 0; i < N * N; i++) {
+      let v = w.garbage[i];
+      const g = gen(i);
+      if (g) {
+        const eff = w.garbCov[i] > 30 ? ratio * Math.min(1, w.garbCov[i] / 160) : 0;
+        v = v + g * 0.7 * (1 - eff) - 18 * eff;
+        sum += Math.max(0, v); cnt++;
+      } else v -= 6;   // prázdne pozemky sa časom vyčistia
+      v = clamp(v, 0, 255);
+      w.garbage[i] = v;
+      const bk = v < 90 ? 0 : v < 170 ? 1 : 2;
+      if (bk !== bucket[i]) { bucket[i] = bk; w.markChunk(i % N, (i / N) | 0); }
+    }
+    // skládky sa plnia (spaľovňa a recyklácia odpad nehromadia)
+    if (landfillCap > 0) for (const b of landfills) {
+      const d = BUILDINGS.landfill;
+      const before = Math.floor((b.fill || 0) / d.capacity * 6);
+      b.fill = Math.min(d.capacity, (b.fill || 0) + collected * (d.garbage * fund / capacity));
+      if (Math.floor(b.fill / d.capacity * 6) !== before) w.markChunk(b.x, b.y);
+    }
+    Object.assign(st.stats, { garbageProd: Math.round(prod), garbageCap: Math.round(capacity), garbageAvg: cnt ? sum / cnt : 0 });
+  }
+
+  // ---- úmrtia a pochovávanie ----
+  computeDeaths() {
+    const w = this.w, N = w.N, st = w.state;
+    let hs = 0, hc = 0;
+    for (let i = 0; i < N * N; i++) if (w.pop[i] && zoneKind(w.zone[i]) === 1) { hs += w.health[i]; hc++; }
+    const avgH = hc ? hs / hc : 0;
+    const deaths = (st.stats.resPop || 0) * 0.0006 * (1.35 - 0.7 * avgH / 255);
+    let pending = (st.unburied || 0) + deaths;
+    let free = 0;
+    for (const b of w.buildings.values()) {
+      if (b.cons > 0) continue;
+      const d = BUILDINGS[b.type];
+      if (d.cremate && b.powered) pending -= Math.min(pending, d.cremate);
+    }
+    for (const b of w.buildings.values()) {
+      if (b.cons > 0 || !BUILDINGS[b.type].graves) continue;
+      const cap = BUILDINGS[b.type].graves, fill = b.fill || 0;
+      const take = Math.min(pending, cap - fill, 400);
+      const before = Math.floor(fill / cap * 8);
+      b.fill = fill + take; pending -= take;
+      free += cap - b.fill;
+      if (Math.floor(b.fill / cap * 8) !== before) w.markChunk(b.x, b.y);
+    }
+    st.unburied = Math.max(0, pending);
+    st.deaths = deaths;
+    st.stats.cemeteryFree = Math.round(free);
   }
 
   // ---- doprava + prístup k ceste ----
@@ -190,8 +322,8 @@ export class Sim {
       if (best >= 0) {
         w.roadAcc[i] = 1;
         const k = zoneKind(w.zone[i]);
-        t[best] += w.pop[i] * (k === 1 ? 0.6 : k === 2 ? 0.9 : 0.5);
-        if (isB) { const bt = w.buildings.get(w.bid[i]).type; if (bt === 'stadium' || bt === 'airport' || bt === 'seaport') t[best] += 12; }
+        t[best] += w.pop[i] * (k === 1 ? 0.6 : k === 2 ? 0.9 : 0.5) * (1 - 0.5 * w.trainCov[i] / 255);
+        if (isB) { const bt = w.buildings.get(w.bid[i]).type; if (bt === 'stadium' || bt === 'airport' || bt === 'seaport' || bt === 'zoo' || bt === 'funpark') t[best] += 12; }
       }
     }
     // rozprestri po cestách
@@ -244,6 +376,7 @@ export class Sim {
       if (k === 3 && L > 0 && !w.abandoned[i]) src[i] += (zoneDense(w.zone[i]) ? 70 : 45) * L;
       if (w.road[i]) src[i] += w.traffic[i] * 0.55;
       if (w.fire[i]) src[i] += 150;
+      src[i] += w.garbage[i] * 0.3;
     }
     for (const b of w.buildings.values()) {
       const d = BUILDINGS[b.type];
@@ -292,6 +425,7 @@ export class Sim {
       v += w.park[i] * 0.3 + w.edu[i] * 0.1 + w.health[i] * 0.08 + w.police[i] * 0.05;
       v -= w.poll[i] * 0.75 + w.crime[i] * 0.4 + w.traffic[i] * 0.06;
       if (w.rubble[i]) v -= 25;
+      v += w.trainCov[i] * 0.09 - w.garbage[i] * 0.35;
       const dc = Math.hypot(x - cx, y - cy);
       v += Math.max(0, 1 - dc / (cityR * 2.5)) * 40 * Math.min(1, sp / 6000);
       w.lv[i] = clamp(v, 0, 255);
@@ -315,6 +449,11 @@ export class Sim {
     let iD = Math.tanh((resPop * 0.26 + ext - indJobs) / (indJobs * 0.3 + 160));
     rD -= (st.tax.R - 7) * 0.08; cD -= (st.tax.C - 7) * 0.08; iD -= (st.tax.I - 7) * 0.08;
     cD += (st.funding.edu - 100) * 0.001; iD += (st.funding.edu - 100) * 0.0005;
+    for (const b of w.buildings.values()) { const a = BUILDINGS[b.type].attraction; if (a && !(b.cons > 0)) { rD += a; cD += a * 0.6; } }
+    // nepochovaní zosnulí: mierny, postupne rastúci pokles záujmu o bývanie
+    const thr = 40 + resPop * 0.01;
+    if (st.unburied > thr) rD -= Math.min(0.25, (st.unburied - thr) / (resPop * 0.05 + 300));
+    if (this.activeRail && this.activeRail.size) cD += 0.04;
     if (resPop > 25000 && !has('stadium')) rD = Math.min(rD, 0.05);
     if (comJobs > 6000 && !has('airport')) cD = Math.min(cD, 0.05);
     if (indJobs > 7000 && !has('seaport')) iD = Math.min(iD, 0.05);
@@ -330,7 +469,7 @@ export class Sim {
     const dem = [0, st.demand.R, st.demand.C, st.demand.I];
     for (let i = 0; i < N * N; i++) {
       const z = w.zone[i];
-      if (!z || w.fire[i]) continue;
+      if (!z || w.fire[i] || w.cons[i] > 0) continue;
       const k = zoneKind(z), dense = zoneDense(z);
       let L = w.level[i];
       const x = i % N, y = (i / N) | 0;
@@ -347,6 +486,7 @@ export class Sim {
       else if (k === 2) score -= w.poll[i] / 255 * 0.35 + w.crime[i] / 255 * 0.7 + w.traffic[i] / 255 * 0.1;
       else score -= w.crime[i] / 255 * 0.4 - 0.1;
       if (k !== 3) score += w.park[i] / 255 * 0.3;
+      score -= w.garbage[i] / 255 * (k === 3 ? 0.25 : 0.65);
       if (k === 1) score += w.health[i] / 255 * 0.15 + w.edu[i] / 255 * 0.15;
       score += (Math.random() - 0.5) * 0.3;
       const ok = powered && acc;
@@ -365,13 +505,16 @@ export class Sim {
         // vyššie úrovne potrebujú vyššiu hodnotu pozemku
         const need = [0, 0, 30, 70, 105, 140][L + 1] * (k === 3 ? 0.12 : 1);
         if (w.lv[i] >= need || L === 0) {
+          const oldL = L;
           L++; w.level[i] = L; w.rubble[i] = 0; w.variant[i] = (Math.random() * 256) | 0; w.tree[i] = 0;
+          // stavenisko: nová výstavba alebo prerábka existujúcej budovy
+          w.cons[i] = w.consTot[i] = CONS_T[L]; w.consFrom[i] = oldL;
           w.markDirty(x, y);
         }
       } else if (L > 1 && score < -0.3 && Math.random() < -score * 0.25) {
         L--; w.level[i] = L; w.markDirty(x, y);
       } else if (L > maxL) { L = maxL; w.level[i] = L; w.markDirty(x, y); }
-      w.pop[i] = Math.round(POP[k][L] * (0.85 + (w.variant[i] / 255) * 0.3));
+      if (!(w.cons[i] > 0)) w.pop[i] = Math.round(POP[k][L] * (0.85 + (w.variant[i] / 255) * 0.3));
     }
   }
 
@@ -385,18 +528,19 @@ export class Sim {
     const tC = s.comJobs * st.tax.C / 100 * 11 * lvF / 12;
     const tI = s.indJobs * st.tax.I / 100 * 10 / 12;
     let roads = 0;
-    for (let i = 0; i < w.N * w.N; i++) if (w.road[i]) roads += w.water[i] ? 2 : 0.5;
-    roads += 0; const roadCost = roads * st.funding.roads / 100 / 12;
-    const cat = { police: 0, fire: 0, health: 0, edu: 0, power: 0, other: 0 };
+    for (let i = 0; i < w.N * w.N; i++) { if (w.road[i]) roads += w.water[i] ? 2 : 0.5; if (w.rail[i]) roads += w.water[i] ? 3 : 0.8; }
+    const cat = { police: 0, fire: 0, health: 0, edu: 0, power: 0, waste: 0, other: 0 };
     for (const b of w.buildings.values()) {
       const d = BUILDINGS[b.type];
       b.age = (b.age || 0) + 1;
       const f = d.fund ? st.funding[d.fund] / 100 : 1;
-      const key = d.fund || (d.cat === 'power' || d.cat === 'water' ? 'power' : 'other');
+      const key = d.fund || (d.cat === 'power' || d.cat === 'water' ? 'power' : d.cat === 'death' ? 'health' : 'other');
+      if (d.cat === 'transport') { roads += d.upkeep * 12 / 12; continue; }
       cat[key] += d.upkeep * f / 12;
     }
+    const roadCost = roads * st.funding.roads / 100 / 12;
     const income = tR + tC + tI;
-    const exp = roadCost + cat.police + cat.fire + cat.health + cat.edu + cat.power + cat.other;
+    const exp = roadCost + cat.police + cat.fire + cat.health + cat.edu + cat.power + cat.waste + cat.other;
     st.funds += income - exp;
     a.taxR += tR; a.taxC += tC; a.taxI += tI; a.roads += roadCost;
     for (const k of Object.keys(cat)) a[k] += cat[k];
@@ -405,7 +549,7 @@ export class Sim {
 
   yearEnd() {
     const st = this.w.state, a = st.yearAcc;
-    const inc = a.taxR + a.taxC + a.taxI, exp = a.roads + a.police + a.fire + a.health + a.edu + a.power + a.other;
+    const inc = a.taxR + a.taxC + a.taxI, exp = a.roads + a.police + a.fire + a.health + a.edu + a.power + (a.waste || 0) + a.other;
     st.lastYear = { ...a, income: inc, expense: exp, year: st.year };
     this.news(`Koniec roka ${st.year}: príjmy ${fmtMoney(inc)}, výdavky ${fmtMoney(exp)}, bilancia ${fmtMoney(inc - exp)}.`, inc >= exp ? 'good' : 'warn');
     for (const k of Object.keys(a)) a[k] = 0;
@@ -448,12 +592,41 @@ export class Sim {
     if (s.resPop > 25000 && ![...w.buildings.values()].some(b => b.type === 'stadium')) tips.push(['Obyvatelia nechcú žiť v meste bez štadióna.', 'warn']);
     if (s.comJobs > 6000 && ![...w.buildings.values()].some(b => b.type === 'airport')) tips.push(['Obchod stagnuje – mesto potrebuje letisko.', 'warn']);
     if (s.indJobs > 7000 && ![...w.buildings.values()].some(b => b.type === 'seaport')) tips.push(['Priemysel potrebuje prístav na vývoz tovaru.', 'warn']);
+    if (s.resPop > 800 && (s.garbageAvg || 0) > 50) tips.push([s.garbageCap ? 'Smetiari nestíhajú vyvážať odpad – postavte ďalšiu skládku, spaľovňu alebo recykláciu.' : 'Na uliciach sa hromadia smeti! Postavte skládku odpadu.', 'warn']);
+    for (const b of w.buildings.values()) if (b.type === 'landfill' && !b.full && (b.fill || 0) > BUILDINGS.landfill.capacity * 0.85) { tips.push(['Skládka odpadu je takmer plná.', 'warn']); break; }
+    if ((st.unburied || 0) > 30) tips.push([s.cemeteryFree === 0 && [...w.buildings.values()].some(b => b.type === 'cemetery') ? 'Cintoríny sú plné – postavte nový cintorín alebo krematórium.' : 'Ľudia nemajú kde pochovávať blízkych – postavte cintorín.', 'warn']);
+    if (roads > 150 && traf / roads > 120 && !(this.activeRail && this.activeRail.size)) tips.push(['Dopravu by odľahčila železnica: postavte trať a aspoň dve stanice.', 'info']);
     if (tips.length) { const t = tips[Math.floor(Math.random() * tips.length)]; this.news(t[0], t[1]); }
   }
 
   // ================= rýchly krok (požiare, ...) =================
+  // postup výstavby: volá sa z rýchleho kroku (kým hra beží)
+  tickConstruction() {
+    const w = this.w, N = w.N;
+    const stage = (c, t) => Math.floor((1 - c / (t || 8)) * 5);
+    for (let i = 0; i < N * N; i++) {
+      const c = w.cons[i];
+      if (!c) continue;
+      const t = w.consTot[i] || 8, before = stage(c, t);
+      w.cons[i] = c - 1;
+      const x = i % N, y = (i / N) | 0;
+      if (c - 1 === 0) {
+        const k = zoneKind(w.zone[i]), L = w.level[i];
+        if (k && L > 0 && !w.abandoned[i]) w.pop[i] = Math.round(POP[k][L] * (0.85 + (w.variant[i] / 255) * 0.3));
+        w.consFrom[i] = 0; w.markChunk(x, y);
+      } else if (stage(c - 1, t) !== before) w.markChunk(x, y);
+    }
+    for (const b of w.buildings.values()) {
+      if (!(b.cons > 0)) continue;
+      const t = b.consTot || 8, before = stage(b.cons, t);
+      b.cons--;
+      if (b.cons === 0 || stage(b.cons, t) !== before) w.markChunk(b.x, b.y);
+    }
+  }
+
   fastTick() {
     const w = this.w, N = w.N;
+    this.tickConstruction();
     let burning = 0;
     const toIgnite = [];
     for (let i = 0; i < N * N; i++) {

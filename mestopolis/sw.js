@@ -1,5 +1,5 @@
 // Mestopolis – service worker: online vždy čerstvá verzia, offline z cache
-const VERSION = 'mestopolis-v3';
+const VERSION = 'mestopolis-v8';
 const ASSETS = [
   './', './index.html', './style.css', './manifest.webmanifest',
   './js/main.js', './js/config.js', './js/noise.js', './js/world.js', './js/sim.js', './js/geom.js',

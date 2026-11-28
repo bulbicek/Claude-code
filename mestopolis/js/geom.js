@@ -30,6 +30,20 @@ export class GB {
   }
   quad(a, b, c, d, color, glow, hint) { this.tri(a, b, c, color, glow, hint); this.tri(a, c, d, color, glow, hint); }
 
+  // trojuholník s farbou po vrcholoch (prechody = falošná ambientná oklúzia)
+  tric(a, b, c, ca, cb, cc, glow = ZERO, hint = null) {
+    let ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    let vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (hint && nx * hint[0] + ny * hint[1] + nz * hint[2] < 0) { let t = b; b = c; c = t; t = cb; cb = cc; cc = t; nx = -nx; ny = -ny; nz = -nz; }
+    const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+    this.p.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    this.n.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+    this.c.push(ca[0], ca[1], ca[2], cb[0], cb[1], cb[2], cc[0], cc[1], cc[2]);
+    this.g.push(glow[0], glow[1], glow[2], glow[0], glow[1], glow[2], glow[0], glow[1], glow[2]);
+  }
+  quadC(a, b, c, d, ca, cb, cc, cd, glow, hint) { this.tric(a, b, c, ca, cb, cc, glow, hint); this.tric(a, c, d, ca, cc, cd, glow, hint); }
+
   // kváder: stred x,z, spodok y, rozmery w (x), h, d (z); colors: farba alebo {top, side}
   box(x, y, z, w, h, d, color, opt = {}) {
     const x0 = x - w / 2, x1 = x + w / 2, z0 = z - d / 2, z1 = z + d / 2, y0 = y, y1 = y + h;
@@ -38,10 +52,16 @@ export class GB {
     const sx = opt.shadeX ?? 0.86, sz = opt.shadeZ ?? 0.94;
     this.quad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0], top, opt.topGlow || g, [0, 1, 0]);
     if (!opt.noSides) {
-      this.quad([x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1], shade(side, sx), g, [1, 0, 0]);
-      this.quad([x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [x0, y0, z0], shade(side, sx), g, [-1, 0, 0]);
-      this.quad([x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [x0, y0, z1], shade(side, sz), g, [0, 0, 1]);
-      this.quad([x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0], shade(side, sz), g, [0, 0, -1]);
+      // spodok steny je tmavší (falošná ambientná oklúzia), vrch jemne svetlejší
+      const ao = opt.ao ?? (h > 0.14 ? 0.72 : 0.9);
+      const side4 = (f, a, b, c, d, hint) => {
+        const base = shade(side, f), lo = shade(base, ao), hi = shade(base, 1.04);
+        this.quadC(a, b, c, d, lo, hi, hi, lo, g, hint);
+      };
+      side4(sx, [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1], [1, 0, 0]);
+      side4(sx, [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [x0, y0, z0], [-1, 0, 0]);
+      side4(sz, [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [x0, y0, z1], [0, 0, 1]);
+      side4(sz, [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0], [0, 0, -1]);
     }
     if (opt.bottom) this.quad([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], side, g, [0, -1, 0]);
   }
@@ -113,6 +133,7 @@ export class GB {
     const e = 0.006;
     const x0 = x - w / 2 - e, x1 = x + w / 2 + e, z0 = z - d / 2 - e, z1 = z + d / 2 + e;
     const start = opt.skipGround ? 1 : 0;
+    const aoAt = yy => { const t = Math.max(0, Math.min(1, (yy - y) / Math.max(0.0001, h))); return 0.72 + 0.32 * t; };
     for (let f = start; f < floors; f++) {
       const ya = y + f * fh + fh * 0.3, yb = y + f * fh + fh * 0.78;
       const segs = opt.segs || 2;
@@ -127,7 +148,8 @@ export class GB {
         for (const sd of sides) {
           const on = rnd() < lit;
           const gl = on ? warm.map(v => v * (0.6 + rnd() * 0.5)) : ZERO;
-          this.quad(sd[0], sd[1], sd[2], sd[3], on ? mix(glass, [0.5, 0.42, 0.25], 0.25) : glass, gl, sd[4]);
+          const gc = on ? mix(glass, [0.5, 0.42, 0.25], 0.25) : glass;
+          this.quadC(sd[0], sd[1], sd[2], sd[3], shade(gc, aoAt(ya)), shade(gc, aoAt(yb)), shade(gc, aoAt(yb)), shade(gc, aoAt(ya)), gl, sd[4]);
         }
       }
     }
@@ -144,17 +166,37 @@ export class GB {
   }
 }
 
-// materiál s nočnou žiarou (atribút glow * uNight)
+// šum pre shadery (hodnotový šum + fbm)
+export const NOISE_GLSL = `
+float hsh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hsh(i), hsh(i + vec2(1.0, 0.0)), f.x), mix(hsh(i + vec2(0.0, 1.0)), hsh(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float fbm2(vec2 p){ return vnoise(p) * 0.6 + vnoise(p * 2.07 + 7.3) * 0.3 + vnoise(p * 4.1 + 3.1) * 0.1; }
+`;
+// tiene oblakov: pomaly plávajúce tmavé škvrny na zemi
+export const CLOUD_GLSL = `
+float cloudShade(vec2 wp, float t){
+  float c = fbm2(wp * 0.028 + vec2(t * 0.45, t * 0.18));
+  return smoothstep(0.52, 0.78, c);
+}
+`;
+
+// materiál s nočnou žiarou (atribút glow * uNight) a tieňmi oblakov
 export function glowMaterial(uniforms, extra = {}) {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true, ...extra });
   m.onBeforeCompile = sh => {
     sh.uniforms.uNight = uniforms.uNight;
+    sh.uniforms.uTime = uniforms.uTime;
+    sh.uniforms.uCloud = uniforms.uCloud;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec3 glow;\nvarying vec3 vGlow;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = glow;');
+      .replace('#include <common>', '#include <common>\nattribute vec3 glow;\nvarying vec3 vGlow;\nvarying vec3 vWP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = glow;\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying vec3 vGlow;')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * uNight * 2.2;');
+      .replace('#include <common>', '#include <common>\nuniform float uNight, uTime, uCloud;\nvarying vec3 vGlow;\nvarying vec3 vWP;\n' + NOISE_GLSL + CLOUD_GLSL)
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - 0.24 * uCloud * cloudShade(vWP.xz, uTime);')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * uNight * 1.7;');
   };
   return m;
 }

@@ -5,9 +5,10 @@ import { UI } from './ui.js';
 import { BUILDINGS, COST, HS, SEA, TOOL_GROUPS, fmtMoney, zoneDense } from './config.js';
 
 const SPEED_MONTH = [Infinity, 7, 3.2, 1.1]; // sekúnd na mesiac
-const LINE_TOOLS = ['road', 'pline', 'pipe'];
+const LINE_TOOLS = ['road', 'rail', 'pline', 'pipe'];
+const SAVE_KEY = 'mestopolis-save';
 const RECT_TOOLS = ['bulldoze', 'dezone', 'tree', 'level'];
-const UNDO_ARRAYS = ['zone', 'level', 'pop', 'variant', 'road', 'pline', 'pipe', 'tree', 'bid', 'rubble', 'abandoned', 'fire'];
+const UNDO_ARRAYS = ['zone', 'level', 'pop', 'variant', 'road', 'pline', 'pipe', 'tree', 'bid', 'rubble', 'abandoned', 'fire', 'cons', 'consTot', 'consFrom', 'rail', 'garbage'];
 
 class Game {
   constructor() {
@@ -28,9 +29,23 @@ class Game {
     this.ui.markSpeed(this.speed);
     this.setTool('query');
 
-    // úvodná mapa v pozadí + dialóg
-    this.newCity({ name: 'Nové Mesto', size: 128, year: 1950, funds: 20000, hills: 0.45, water: 0.4, trees: 0.5, coast: true, river: true, seed: Math.floor(Math.random() * 99999) }, true);
-    this.ui.newCityDialog(true);
+    // štart: ak existuje uložená hra, rovno ju nahraj; inak nové mesto
+    let saved = null, loaded = false;
+    try { saved = localStorage.getItem(SAVE_KEY); } catch (e) { }
+    if (saved) {
+      try {
+        this.attach(World.deserialize(saved)); loaded = true;
+        this.ui.pushNews(`Vitaj späť, starosta! Pokračuješ v meste ${this.world.state.name}.`, 'good');
+        this.ui.toast(`✔ Nahraté mesto ${this.world.state.name}`, 'ok', 2200);
+      } catch (e) { this.ui.toast('✖ Uloženú hru sa nepodarilo nahrať: ' + e.message, 'err', 5000); }
+    }
+    if (!loaded) {
+      this.newCity({ name: 'Nové Mesto', size: 128, year: 1950, funds: 20000, hills: 0.45, water: 0.4, trees: 0.5, coast: true, river: true, seed: Math.floor(Math.random() * 99999) }, true);
+      this.ui.newCityDialog(true);
+    }
+    // uloženie pri odchode z aplikácie / zatvorení karty
+    document.addEventListener('visibilitychange', () => { if (document.hidden && this.world && this.autosave) this.save(true); });
+    addEventListener('pagehide', () => { if (this.world && this.autosave) this.save(true); });
     this.last = performance.now();
     requestAnimationFrame(t => this.frame(t));
   }
@@ -72,17 +87,27 @@ class Game {
     this.world.terrainColorDirty = true;
   }
 
+  // uloží mesto a overí, že sa naozaj zapísalo; výsledok oznámi okienkom
   save(silent = false) {
+    let ok = false, err = '';
     try {
-      localStorage.setItem('mestopolis-save', this.world.serialize());
-      if (!silent) this.ui.pushNews('Mesto bolo uložené.', 'good');
-    } catch (e) { this.ui.pushNews('Uloženie zlyhalo: ' + e.message, 'bad'); }
+      const data = this.world.serialize();
+      localStorage.setItem(SAVE_KEY, data);
+      ok = (localStorage.getItem(SAVE_KEY) || '').length === data.length;
+      if (!ok) err = 'uložené dáta sa nedajú prečítať späť';
+    } catch (e) {
+      err = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message)) ? 'v úložisku nie je dosť miesta' : (e && e.message) || 'neznáma chyba';
+    }
+    const t = new Date(), hh = String(t.getHours()).padStart(2, '0'), mm = String(t.getMinutes()).padStart(2, '0');
+    if (ok) { this.lastSave = t; this.ui.toast(silent ? `Automaticky uložené ${hh}:${mm}` : `✔ Hra bola uložená (${hh}:${mm})`, 'ok', silent ? 1500 : 2400, silent); }
+    else this.ui.toast('✖ Hru sa NEPODARILO uložiť: ' + err, 'err', 5000);
+    return ok;
   }
   load() {
-    let s = null; try { s = localStorage.getItem('mestopolis-save'); } catch (e) { }
-    if (!s) { this.ui.pushNews('Žiadne uložené mesto.', 'warn'); return; }
-    try { this.attach(World.deserialize(s)); this.ui.pushNews(`Mesto ${this.world.state.name} bolo nahraté.`, 'good'); }
-    catch (e) { this.ui.pushNews('Nahrávanie zlyhalo: ' + e.message, 'bad'); }
+    let s = null; try { s = localStorage.getItem(SAVE_KEY); } catch (e) { }
+    if (!s) { this.ui.toast('Žiadne uložené mesto', 'err', 2500); return; }
+    try { this.attach(World.deserialize(s)); this.ui.toast(`✔ Nahraté mesto ${this.world.state.name}`, 'ok', 2200); }
+    catch (e) { this.ui.toast('✖ Nahrávanie zlyhalo: ' + e.message, 'err', 5000); }
   }
   exportFile() {
     const blob = new Blob([this.world.serialize()], { type: 'application/json' });
@@ -255,9 +280,9 @@ class Game {
 
     c.addEventListener('wheel', e => {
       e.preventDefault();
-      const v = this.r.view;
-      v.zoom = Math.max(3, Math.min(this.world.N * 0.6, v.zoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15)));
+      this.zoomAt(this.ndc(e), this.r.view.zoom * (e.deltaY > 0 ? 1.15 : 1 / 1.15));
     }, { passive: false });
+    document.getElementById('saveBtn').onclick = () => this.save();
     addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
       const k = e.key.toLowerCase();
@@ -290,6 +315,18 @@ class Game {
       this.r.view.tz = (e.clientY - r.top) / r.height * this.world.N;
     };
     mm.addEventListener('mousedown', e => { mmMove(e); const mv = ev => mmMove(ev); const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); }; addEventListener('mousemove', mv); addEventListener('mouseup', up); });
+  }
+
+  // priblíženie tak, aby bod pod kurzorom zostal na mieste
+  zoomAt(ndc, nz) {
+    const v = this.r.view;
+    const p0 = this.r.pick(...ndc);
+    v.zoom = Math.max(3, Math.min(this.world.N * 0.6, nz));
+    if (p0 && !p0.outside) {
+      this.r.updateCamera(0);
+      const p1 = this.r.pick(...ndc);
+      if (p1 && !p1.outside) { v.tx += p0.x - p1.x; v.tz += p0.z - p1.z; this.clampView(); }
+    }
   }
 
   rotate(d) {
@@ -348,10 +385,11 @@ class Game {
       const i = w.ti(x, y);
       let ok = false, c = 0;
       if (t === 'road') { ok = w.canRoad(x, y); c = w.water[i] ? COST.bridge : COST.road; }
+      else if (t === 'rail') { ok = w.canRail(x, y); c = w.water[i] ? COST.railBridge : COST.rail; }
       else if (t === 'pline') { ok = w.canPline(x, y); c = w.water[i] ? COST.plineWater : COST.pline; }
       else if (t === 'pipe') { ok = w.canPipe(x, y); c = COST.pipe; }
       else if (t.startsWith('z:')) { const z = +t.slice(2); ok = w.canZone(x, y, z); c = zoneDense(z) ? COST.zoneDense : COST.zoneLight; }
-      else if (t === 'bulldoze') { ok = !!(w.bid[i] || w.level[i] || w.road[i] || w.pline[i] || w.rubble[i] || w.tree[i] || w.zone[i]); c = w.bid[i] ? 10 : w.level[i] ? 5 : 1; }
+      else if (t === 'bulldoze') { ok = !!(w.bid[i] || w.level[i] || w.road[i] || w.rail[i] || w.pline[i] || w.rubble[i] || w.tree[i] || w.zone[i]); c = w.bid[i] ? 10 : w.level[i] ? 5 : 1; }
       else if (t === 'dezone') { ok = !!w.zone[i]; c = 1; }
       else if (t === 'tree') { ok = !w.water[i] && w.isEmpty(i) && !w.zone[i] && w.tree[i] < 3; c = COST.tree; }
       else if (t === 'level') { ok = true; }
@@ -534,6 +572,7 @@ class Game {
     for (const [x, y, ok] of ev.tiles) {
       if (!ok) continue;
       if (t === 'road') { if (!w.canRoad(x, y)) continue; spent += w.water[w.ti(x, y)] ? COST.bridge : COST.road; w.placeRoad(x, y); }
+      else if (t === 'rail') { if (!w.canRail(x, y)) continue; spent += w.water[w.ti(x, y)] ? COST.railBridge : COST.rail; w.placeRail(x, y); }
       else if (t === 'pline') { if (!w.canPline(x, y)) continue; spent += w.water[w.ti(x, y)] ? COST.plineWater : COST.pline; w.placePline(x, y); }
       else if (t === 'pipe') { spent += COST.pipe; w.placePipe(x, y); }
       else if (t.startsWith('z:')) { const z = +t.slice(2); spent += zoneDense(z) ? COST.zoneDense : COST.zoneLight; w.placeZone(x, y, z); }
@@ -546,14 +585,27 @@ class Game {
   }
 
   afterEdit() {
-    this.sim.computePower(); this.sim.computeWater(); this.sim.computeTraffic();
+    this.sim.computePower(); this.sim.computeWater(); this.sim.computeRail(); this.sim.computeTraffic();
     this.r.cars.refreshRoads(this.world);
     this.world.terrainColorDirty = true;
     this.ui.updateTop();
   }
 
   // ---------- slučka ----------
+  // jedna chyba v kroku nesmie zastaviť celú hru: slučka beží ďalej a chyba sa len ohlási
   frame(t) {
+    try { this.step(t); } catch (e) { this.frameError(e); }
+    requestAnimationFrame(tt => this.frame(tt));
+  }
+
+  frameError(e) {
+    this.errCount = (this.errCount || 0) + 1;
+    console.warn('Chyba v hernom kroku:', e);
+    const msg = String(e && e.message || e).slice(0, 80);
+    if (this.errCount <= 3 || this.lastErr !== msg) { this.lastErr = msg; if (this.errCount <= 6) this.ui.pushNews('Chyba v hre (hra beží ďalej): ' + msg, 'bad'); }
+  }
+
+  step(t) {
     const dt = Math.min(0.1, (t - this.last) / 1000);
     this.last = t;
     const time = t / 1000;
@@ -568,7 +620,8 @@ class Game {
       if (K.has('s') || K.has('arrowdown')) { if (!K.has('control')) { v.tx -= fwd[0] * sp; v.tz -= fwd[1] * sp; } }
       this.clampView();
     }
-    // simulácia
+    // simulácia (chyba v nej neruší kreslenie)
+    try {
     if (this.speed > 0) {
       this.monthAcc += dt;
       if (this.monthAcc >= SPEED_MONTH[this.speed]) {
@@ -583,17 +636,21 @@ class Game {
       if (this.r.settings.timeMode === 'cycle') this.r.tod = (this.r.tod + dt / 150 * [0, 0.7, 1, 2][this.speed]) % 1;
       this.updateTornado(dt);
     }
+    } catch (e) { this.monthAcc = 0; this.fastAcc = 0; this.frameError(e); }
     w.state.dayFrac = this.monthAcc / SPEED_MONTH[this.speed || 2];
     this.r.syncWorld(this.speed === 0 ? 14 : 7);
     const sf = [0, 0.6, 1, 1.6][this.speed];
     this.r.spawnEffects(dt * (this.speed ? 1 : 0), this.sim, sf);
     const target = Math.round(Math.min(650, this.r.cars.roadTiles.length * 0.12 + (this.sim.totalTraffic || 0) / 260));
     this.r.cars.update(dt * sf, w, target, this.r.night, 1);
+    this.r.boats.update(dt * sf, w);
+    this.r.trains.update(dt * sf, w, this.sim, this.r.night || 0);
+    this.r.planes.update(dt * sf, w, time);
+    this.r.cars.wasteActive = (w.state.stats.garbageCap || 0) > 0;
     this.r.icons.update(w, time, this.r.view.zoom);
     this.r.render(dt, time);
     this.miniAcc += dt;
     if (this.miniAcc > 1) { this.miniAcc = 0; this.ui.drawMinimap(); }
-    requestAnimationFrame(tt => this.frame(tt));
   }
 }
 
@@ -608,7 +665,8 @@ catch (e) {
 }
 
 // ---- PWA: service worker (offline) ----
-try { if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+const IN_APP = /MestopolisApp/.test(navigator.userAgent); // beží v Android aplikácii (APK)
+try { if ('serviceWorker' in navigator && location.protocol !== 'file:' && !IN_APP) {
   navigator.serviceWorker.register('./sw.js').then(reg => {
     reg.addEventListener('updatefound', () => {
       const nw = reg.installing;

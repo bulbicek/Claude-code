@@ -1,6 +1,7 @@
 import { HS, FLOOR, SEA, zoneKind, zoneDense, BUILDINGS } from './config.js';
 import { col, shade, mix } from './geom.js';
 import { rng } from './noise.js';
+import { extraBuilding } from './extrageo.js';
 
 const C = {
   asphalt: col(0x3d4046), side: col(0xa7a69c), dash: col(0xe8d36a), white: col(0xeeeeea),
@@ -22,10 +23,10 @@ const LEAF = [0x3d7a2c, 0x4b8a32, 0x2f6b2a, 0x5a9a3a, 0x3a6e3a, 0x6a9a34].map(co
 const CARC = [0xc8352b, 0x2f5fa8, 0xeeeeea, 0x2b2b2b, 0xe0a224, 0x3d8a4a].map(col);
 
 // ---------- pomocné ----------
-function surfY(w, x, z) { return w.heightAt(x, z) * HS; }
+export function surfY(w, x, z) { return w.heightAt(x, z) * HS; }
 
 // plošný obdĺžnik kopírujúci terén
-function decal(gb, w, x0, z0, x1, z1, color, lift, sub = 2, glow) {
+export function decal(gb, w, x0, z0, x1, z1, color, lift, sub = 2, glow) {
   for (let j = 0; j < sub; j++) for (let i = 0; i < sub; i++) {
     const ax = x0 + (x1 - x0) * i / sub, bx = x0 + (x1 - x0) * (i + 1) / sub;
     const az = z0 + (z1 - z0) * j / sub, bz = z0 + (z1 - z0) * (j + 1) / sub;
@@ -52,7 +53,7 @@ export function beam(gb, a, b, t, color, glow) {
   }
 }
 
-function plinth(gb, w, x, y, s, color = C.concrete) {
+export function plinth(gb, w, x, y, s, color = C.concrete) {
   let mn = 99, mx = -99;
   for (let dy = 0; dy <= s; dy++) for (let dx = 0; dx <= s; dx++) { const h = w.ch(x + dx, y + dy); mn = Math.min(mn, h); mx = Math.max(mx, h); }
   const base = mx * HS + 0.02;
@@ -63,22 +64,37 @@ function plinth(gb, w, x, y, s, color = C.concrete) {
 // ---------- stromy ----------
 export function trees(gb, w, x, y, count, seed, scale = 1) {
   const r = rng(seed);
+  const AUT = [col(0xd9792b), col(0xc9a227), col(0xb5452b)];
   for (let k = 0; k < count; k++) {
-    const px = x + 0.18 + r() * 0.64, pz = y + 0.18 + r() * 0.64;
+    const px = x + 0.16 + r() * 0.68, pz = z0(y, r);
     const by = surfY(w, px, pz);
-    const s = (0.75 + r() * 0.5) * scale;
-    const leaf = LEAF[Math.floor(r() * LEAF.length)];
-    if (r() < 0.5) { // ihličnan
-      gb.cyl(px, by, pz, 0.025 * s, 0.1 * s, C.trunk, 4);
-      gb.cyl(px, by + 0.08 * s, pz, 0.13 * s, 0.24 * s, shade(leaf, 0.85), 6, 0);
-      gb.cyl(px, by + 0.2 * s, pz, 0.1 * s, 0.2 * s, leaf, 6, 0);
-    } else { // listnatý
-      gb.cyl(px, by, pz, 0.025 * s, 0.14 * s, C.trunk, 4);
-      gb.cyl(px, by + 0.1 * s, pz, 0.08 * s, 0.08 * s, shade(leaf, 0.9), 6, 0.14 * s, { noCap: true });
-      gb.cyl(px, by + 0.18 * s, pz, 0.14 * s, 0.14 * s, leaf, 6, 0.0);
+    const s = (0.7 + r() * 0.6) * scale;
+    let leaf = LEAF[Math.floor(r() * LEAF.length)];
+    if (r() < 0.08) leaf = AUT[Math.floor(r() * 3)];
+    const t = r();
+    if (t < 0.3) { // borovica / smrek
+      gb.cyl(px, by, pz, 0.022 * s, 0.1 * s, C.trunk, 4);
+      gb.cyl(px, by + 0.07 * s, pz, 0.14 * s, 0.2 * s, shade(leaf, 0.82), 7, 0);
+      gb.cyl(px, by + 0.17 * s, pz, 0.11 * s, 0.19 * s, shade(leaf, 0.92), 7, 0);
+      gb.cyl(px, by + 0.27 * s, pz, 0.075 * s, 0.17 * s, leaf, 7, 0);
+    } else if (t < 0.58) { // listnatý strom s korunou z blokov
+      gb.cyl(px, by, pz, 0.026 * s, 0.15 * s, C.trunk, 5);
+      gb.cyl(px, by + 0.1 * s, pz, 0.1 * s, 0.09 * s, shade(leaf, 0.85), 7, 0.16 * s, { noCap: true });
+      gb.cyl(px, by + 0.19 * s, pz, 0.16 * s, 0.1 * s, leaf, 7, 0.1 * s, { noCap: true });
+      gb.cyl(px, by + 0.29 * s, pz, 0.1 * s, 0.05 * s, shade(leaf, 1.12), 7, 0.0);
+    } else if (t < 0.76) { // topoľ / cyprus
+      gb.cyl(px, by, pz, 0.02 * s, 0.08 * s, C.trunk, 4);
+      gb.cyl(px, by + 0.06 * s, pz, 0.065 * s, 0.34 * s, leaf, 6, 0.0);
+    } else if (t < 0.9) { // kroví
+      gb.cyl(px, by, pz, 0.09 * s, 0.07 * s, shade(leaf, 0.9), 6, 0.06 * s);
+      gb.cyl(px + 0.06 * s, by, pz + 0.03 * s, 0.06 * s, 0.05 * s, leaf, 6, 0.04 * s);
+    } else { // breza
+      gb.cyl(px, by, pz, 0.016 * s, 0.2 * s, col(0xe6e3d8), 4);
+      gb.cyl(px, by + 0.13 * s, pz, 0.11 * s, 0.13 * s, mix(leaf, col(0xa8c860), 0.4), 6, 0.04 * s);
     }
   }
 }
+function z0(y, r) { return y + 0.16 + r() * 0.68; }
 
 // ---------- cesty ----------
 const nbs = (w, x, y, arr) => [
@@ -122,6 +138,8 @@ export function road(gb, w, x, y, night) {
     const lx = x + 0.08, lz = y + 0.08, ly = surfY(w, lx, lz);
     gb.box(lx, ly, lz, 0.025, 0.3, 0.025, C.darkMetal);
     gb.box(lx + 0.04, ly + 0.29, lz + 0.04, 0.07, 0.025, 0.07, C.white, { glow: [1.6, 1.3, 0.75] });
+    // svetelný kruh na vozovke (viditeľný len v noci)
+    gb.cyl(x + 0.32, surfY(w, x + 0.32, y + 0.32) + 0.034, y + 0.32, 0.13, 0.001, C.asphalt, 8, null, { glow: [0.55, 0.42, 0.16] });
   }
 }
 
@@ -225,123 +243,17 @@ export function rubble(gb, w, x, y, seed) {
   }
 }
 
-// ---------- zónové budovy ----------
-export function zoneBuilding(gb, w, x, y, emit) {
-  const i = w.ti(x, y);
-  const z = w.zone[i], L = w.level[i], k = zoneKind(z), v = w.variant[i];
-  const r = rng(v * 7919 + x * 31 + y * 17);
-  const ab = w.abandoned[i];
-  const cx = x + 0.5, cz = y + 0.5;
-  const mx = w.tileMax(x, y), mn = w.tileMin(x, y);
-  let base = mx * HS;
-  if (mx !== mn) gb.box(cx, mn * HS - 0.02, cz, 0.94, base - mn * HS + 0.03, 0.94, C.concrete);
-  const dull = c => (ab ? mix(c, col(0x5a5148), 0.6) : c);
-  const lit = ab ? 0 : 0.5;
-  const pick = arr => dull(arr[Math.floor(r() * arr.length)]);
-  // pozemok / dvor
-  if (k === 1 && L <= 2) gb.box(cx, base, cz, 0.96, 0.012, 0.96, dull(C.grass), { noSides: false });
-  else gb.box(cx, base, cz, 0.96, 0.014, 0.96, dull(k === 3 ? C.darkConc : C.concrete));
-  base += 0.014;
-
-  if (k === 1) {
-    if (L === 1) {
-      const wall = pick(WALLS_R), roof = pick(ROOFS);
-      const ww = 0.42 + r() * 0.12, dd = 0.36 + r() * 0.1, hh = 0.2;
-      const ox = (r() - 0.5) * 0.15, oz = (r() - 0.5) * 0.15;
-      gb.box(cx + ox, base, cz + oz, ww, hh, dd, wall);
-      gb.windows(cx + ox, base, cz + oz, ww, hh, dd, 1, r, { lit: lit * 0.8, segs: 1 });
-      gb.gable(cx + ox, base + hh, cz + oz, ww, 0.18, dd, roof, wall, r() < 0.5 ? 'x' : 'z');
-      if (r() < 0.6) trees(gb, w, x, y, 1, v + 99, 0.8);
-      if (r() < 0.4) gb.box(cx + ox + ww / 2 + 0.08, base, cz + oz + 0.1, 0.1, 0.06, 0.18, CARC[Math.floor(r() * 6)]);
-    } else if (L === 2) {
-      const wall = pick(WALLS_R), roof = pick(ROOFS);
-      if (r() < 0.5) { // dvojdom
-        for (const s of [-1, 1]) {
-          gb.box(cx + s * 0.2, base, cz, 0.36, 0.38, 0.5, wall);
-          gb.windows(cx + s * 0.2, base, cz, 0.36, 0.38, 0.5, 2, r, { lit, segs: 1 });
-        }
-        gb.gable(cx, base + 0.38, cz, 0.76, 0.2, 0.5, roof, wall, 'x');
-      } else {
-        gb.box(cx, base, cz, 0.64, 0.4, 0.56, wall);
-        gb.windows(cx, base, cz, 0.64, 0.4, 0.56, 2, r, { lit, segs: 2 });
-        gb.pyramid(cx, base + 0.4, cz, 0.72, 0.22, 0.64, roof);
-      }
-    } else {
-      const floors = L === 3 ? 3 + Math.floor(r() * 3) : L === 4 ? 7 + Math.floor(r() * 5) : 14 + Math.floor(r() * 10);
-      const wall = pick(APT);
-      const ww = L === 5 ? 0.66 : 0.78, dd = L === 5 ? 0.66 : 0.72;
-      const H = floors * FLOOR;
-      gb.box(cx, base, cz, ww, H, dd, wall, { top: shade(wall, 0.8) });
-      gb.windows(cx, base, cz, ww, H, dd, floors, r, { lit, segs: L === 3 ? 3 : 2 });
-      if (L >= 4) gb.box(cx, base + H, cz, ww * 0.4, 0.12, dd * 0.4, shade(wall, 0.7));
-      if (L === 5 && r() < 0.5) { gb.box(cx, base + H, cz, ww * 0.85, 0.06, dd * 0.85, shade(wall, 0.9)); }
-      if (L === 3) { gb.box(cx + 0.2, base + H, cz - 0.15, 0.12, 0.08, 0.12, C.metal); }
-    }
-  } else if (k === 2) {
-    if (L === 1) {
-      const wall = pick(COMW), aw = pick(AWN);
-      gb.box(cx, base, cz, 0.72, 0.26, 0.6, wall, { top: C.concrete });
-      gb.windows(cx, base, cz, 0.72, 0.26, 0.6, 1, r, { lit: lit * 1.4, segs: 3, warm: [1, 0.85, 0.55] });
-      gb.box(cx, base + 0.17, cz + 0.33, 0.72, 0.03, 0.08, aw);
-      gb.box(cx, base + 0.26, cz + 0.2, 0.4, 0.09, 0.03, aw, { glow: ab ? undefined : [0.6, 0.6, 0.6].map((v2, j) => aw[j] * 2.5) });
-      gb.box(cx - 0.28, base, cz + 0.4, 0.1, 0.06, 0.16, CARC[Math.floor(r() * 6)]);
-    } else if (L === 2) {
-      const wall = pick(COMW), aw = pick(AWN);
-      gb.box(cx, base, cz, 0.78, 0.42, 0.72, wall);
-      gb.windows(cx, base, cz, 0.78, 0.42, 0.72, 2, r, { lit: lit * 1.3, segs: 3, warm: [1, 0.9, 0.6] });
-      gb.box(cx, base + 0.42, cz, 0.5, 0.08, 0.06, aw, { glow: ab ? undefined : aw.map(c => c * 2) });
-    } else {
-      const floors = L === 3 ? 4 + Math.floor(r() * 4) : L === 4 ? 10 + Math.floor(r() * 7) : 20 + Math.floor(r() * 14);
-      const tc = pick(TOWER), H = floors * FLOOR;
-      const ww = L === 5 ? 0.62 : 0.76;
-      const glassy = r() < 0.5;
-      gb.box(cx, base, cz, ww, H, ww, glassy ? tc : pick(COMW), { top: shade(tc, 0.7) });
-      gb.windows(cx, base, cz, ww, H, ww, floors, r, { lit: lit * 1.1, segs: 3, glass: glassy ? shade(tc, 0.6) : C.glass, warm: [0.95, 0.9, 0.7] });
-      if (L === 5) {
-        const t2 = floors * 0.25 * FLOOR;
-        gb.box(cx, base + H, cz, ww * 0.7, t2, ww * 0.7, tc);
-        gb.windows(cx, base + H, cz, ww * 0.7, t2, ww * 0.7, Math.max(1, Math.floor(floors * 0.25)), r, { lit, segs: 2 });
-        gb.cyl(cx, base + H + t2, cz, 0.02, 0.5, C.metal, 4, 0.005);
-        gb.box(cx, base + H + t2 + 0.5, cz, 0.03, 0.03, 0.03, C.red, { glow: [2, 0.2, 0.1] });
-      } else if (L === 4) gb.pyramid(cx, base + H, cz, ww, 0.25, ww, shade(tc, 0.8));
-    }
-  } else if (k === 3) {
-    const wall = pick(INDW);
-    if (L === 1) {
-      gb.box(cx, base, cz, 0.78, 0.26, 0.6, wall);
-      // pílová strecha
-      for (let s = 0; s < 3; s++) gb.gable(cx - 0.26 + s * 0.26, base + 0.26, cz, 0.26, 0.1, 0.6, C.roofGray, wall, 'z', 0);
-      for (let s = 0; s < 3; s++) gb.box(cx - 0.3 + s * 0.15, base, cz + 0.38, 0.1, 0.08, 0.1, [C.orange, C.blue, C.red][s]);
-    } else if (L === 2) {
-      gb.box(cx - 0.08, base, cz, 0.62, 0.36, 0.7, wall);
-      gb.windows(cx - 0.08, base, cz, 0.62, 0.36, 0.7, 1, r, { lit: lit * 0.6, segs: 3, warm: [1, 0.6, 0.25] });
-      gb.cyl(cx + 0.32, base, cz + 0.2, 0.06, 0.95, C.brick, 8, 0.05, { top: C.black });
-      if (!ab) emit.push([cx + 0.32, base + 0.98, cz + 0.2, 0, 0.25]);
-    } else {
-      gb.box(cx - 0.12, base, cz - 0.05, 0.6, 0.5, 0.75, wall);
-      gb.windows(cx - 0.12, base, cz - 0.05, 0.6, 0.5, 0.75, 2, r, { lit: lit * 0.6, segs: 3, warm: [1, 0.6, 0.25] });
-      gb.cyl(cx + 0.3, base, cz + 0.25, 0.12, 0.35, C.metal, 10);
-      gb.cyl(cx + 0.3, base, cz - 0.15, 0.12, 0.35, shade(C.metal, 0.9), 10);
-      const chs = L === 4 ? 2 : 1;
-      for (let s = 0; s < chs; s++) {
-        gb.cyl(cx - 0.32 + s * 0.2, base, cz + 0.32, 0.055, 1.3 + s * 0.2, s ? C.white : C.brick, 8, 0.045, { top: C.black });
-        if (!ab) emit.push([cx - 0.32 + s * 0.2, base + 1.35 + s * 0.2, cz + 0.32, 0, 0.35]);
-      }
-      if (L === 4) gb.box(cx + 0.3, base + 0.35, cz + 0.05, 0.03, 0.03, 0.4, C.darkMetal);
-    }
-  }
-}
-
 // ---------- služby a špeciálne budovy ----------
 export function serviceBuilding(gb, w, b, emit, night) {
   const s = b.size, x = b.x, y = b.y;
   const cx = x + s / 2, cz = y + s / 2;
   const r = rng(b.id * 131 + 7);
   const t = b.type;
-  const isPark = t === 'park' || t === 'bigpark' || t === 'fountain';
-  const base = plinth(gb, w, x, y, s, isPark ? C.grass : t === 'airport' ? col(0x8a9a7a) : C.concrete);
+  const isPark = BUILDINGS[t].cat === 'park' || t === 'cemetery' || t === 'crematorium';
+  const base = plinth(gb, w, x, y, s, isPark ? C.grass : t === 'airport' ? col(0x8a9a7a) : t === 'landfill' ? col(0x7a6450) : C.concrete);
   const B = base;
   const winLit = 0.6;
+  if (extraBuilding(gb, w, b, emit, B, cx, cz, r)) return;
   switch (t) {
     case 'coal': {
       gb.box(cx - 0.5, B, cz - 0.3, 2.2, 0.9, 1.7, C.brick, { top: C.roofGray });
