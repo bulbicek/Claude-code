@@ -667,7 +667,7 @@ export function construction(gb, w, x, y, emit) {
 }
 
 // stavenisko špeciálnej / službovej budovy
-const BH = { coal: 1.0, nuclear: 1.1, gas: 0.7, solar: 0.4, fusion: 1.0, police: 0.6, fire: 0.6, hospital: 0.8, school: 0.5, college: 0.8, stadium: 0.8, seaport: 0.5, airport: 0.5, cityhall: 0.9, arco: 3.0, wtower: 1.2, pump: 0.3, hydro: 0.5, wind: 0.5 };
+const BH = { incinerator: 1.2, recycling: 0.5, landfill: 0.3, crematorium: 0.6, station: 0.6, botanic: 0.6, zoo: 0.4, funpark: 1.0, sports: 0.3, pond: 0.2, coal: 1.0, nuclear: 1.1, gas: 0.7, solar: 0.4, fusion: 1.0, police: 0.6, fire: 0.6, hospital: 0.8, school: 0.5, college: 0.8, stadium: 0.8, seaport: 0.5, airport: 0.5, cityhall: 0.9, arco: 3.0, wtower: 1.2, pump: 0.3, hydro: 0.5, wind: 0.5 };
 export function buildingSite(gb, w, b, emit, plinthFn) {
   const s = b.size, r = rng(b.id * 977 + 5);
   const B = plinthFn(gb, w, b.x, b.y, s);

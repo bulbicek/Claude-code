@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { HS, SEA, CHUNK, MAX_H, zoneKind, zoneDense } from './config.js';
 import { GB, glowMaterial, col, mix, shade, NOISE_GLSL, CLOUD_GLSL } from './geom.js';
 import * as ZG from './zonegeo.js';
+import * as XG from './extrageo.js';
 import * as BG from './buildgeo.js';
 import { hash2 } from './noise.js';
 
@@ -67,6 +68,8 @@ export class Renderer {
     this.scene.add(this.particles.mesh, this.flames.mesh);
     this.cars = new Cars(this.scene, this.uniforms);
     this.boats = new Boats(this.scene, this.particles);
+    this.trains = new Trains(this.scene);
+    this.planes = new Planes(this.scene);
     this.icons = new PowerIcons(this.scene);
     this.tornadoObj = null;
     this.shake = 0;
@@ -166,7 +169,7 @@ export class Renderer {
     sc.updateProjectionMatrix();
     this.view.tx = N / 2; this.view.tz = N / 2;
     this.view.zoom = 14;
-    this.cars.reset(); this.boats.reset();
+    this.cars.reset(); this.boats.reset(); this.trains.reset();
     world.markAllDirty();
   }
 
@@ -313,7 +316,7 @@ export class Renderer {
         cc = mix(cc, col(zc), w.level[i] > 0 ? 0.25 : 0.62);
       }
       if (w.rubble[i]) cc = mix(cc, col(0x6a5a4a), 0.7);
-      if (w.road[i]) cc = mix(cc, col(0x8f8c80), 0.5);
+      if (w.road[i] || w.rail[i]) cc = mix(cc, col(0x8f8c80), 0.5);
       if (w.fire[i]) cc = mix(cc, col(0x2a2018), 0.6);
     }
     const j = 0.94 + hash2(x, y, 5) * 0.08 * (((x + y) & 1) ? 1 : 0.85);
@@ -346,6 +349,8 @@ export class Renderer {
       case 'edu': c = mix(col(0x3a3a3a), col(0xf2d33a), w.edu[i] / 255); break;
       case 'health': c = mix(col(0x3a3a3a), col(0xff5fa0), w.health[i] / 255); break;
       case 'pop': c = ramp(Math.min(255, w.pop[i] / 2.5)); break;
+      case 'garbage': c = w.level[i] > 0 || w.garbCov[i] ? ramp(w.garbage[i]) : mix(shade(base, 0.6), col(0x3f7bff), w.garbCov[i] / 400); break;
+      case 'train': c = w.rail[i] ? col(0xffe14d) : mix(col(0x3a3a3a), col(0x5fe08a), w.trainCov[i] / 255); k = w.rail[i] ? 0.95 : 0.85; break;
       default: return base;
     }
     return mix(base, c, k);
@@ -373,6 +378,7 @@ export class Renderer {
       const i = w.ti(x, y);
       try {
       if (w.road[i]) BG.road(gb, w, x, y);
+      if (w.rail[i]) XG.rail(gb, w, x, y);
       if (w.pline[i]) BG.powerline(gb, w, x, y);
       if (w.pipe[i]) BG.pipe(gp, w, x, y);
       if (w.bid[i]) {
@@ -380,7 +386,11 @@ export class Renderer {
         if (b && b.x === x && b.y === y) { if (b.cons > 0) ZG.buildingSite(gb, w, b, emit, BG.plinth); else BG.serviceBuilding(gb, w, b, emit); }
         continue;
       }
-      if (w.level[i] > 0 && w.zone[i]) { if (w.cons[i] > 0) ZG.construction(gb, w, x, y, emit); else ZG.zoneBuilding(gb, w, x, y, emit); continue; }
+      if (w.level[i] > 0 && w.zone[i]) {
+        if (w.cons[i] > 0) ZG.construction(gb, w, x, y, emit); else ZG.zoneBuilding(gb, w, x, y, emit);
+        if (w.garbage[i] >= 90) XG.garbagePile(gb, w, x, y, w.garbage[i] >= 170 ? 2 : 1);
+        continue;
+      }
       if (w.rubble[i]) BG.rubble(gb, w, x, y, x * 911 + y);
       if (w.tree[i] && !w.road[i]) BG.trees(gb, w, x, y, w.tree[i], x * 7331 + y * 17 + 1);
       } catch (err) {
@@ -802,6 +812,8 @@ class Cars {
     this.list = [];
     this.m = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.s = new THREE.Vector3(1, 1, 1); this.p = new THREE.Vector3();
     this.roadTiles = [];
+    this.palette = palette.map(c => new THREE.Color(c));
+    this.truckColor = new THREE.Color(0x3f8a3a); this.truckScale = new THREE.Vector3(1.45, 1.45, 1.2); this.wasteActive = false;
   }
   reset() { this.list = []; }
   refreshRoads(w) {
@@ -817,7 +829,7 @@ class Cars {
       const x = i % N, y = (i / N) | 0;
       const nx = this.next(w, x, y, -1);
       if (nx < 0) break;
-      this.list.push({ x, y, d: nx, t: Math.random(), v: 0.9 + Math.random() * 0.5 });
+      this.list.push({ x, y, d: nx, t: Math.random(), v: 0.9 + Math.random() * 0.5, truck: this.wasteActive && Math.random() < 0.1, col: (Math.random() * 8) | 0 });
     }
     if (this.list.length > target + 5) this.list.length = Math.max(0, target);
     const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0];
@@ -843,8 +855,9 @@ class Cars {
       const py = w.water[ti] ? SEA * HS + 0.32 : w.heightAt(px, pz) * HS + 0.03;
       this.p.set(px, py, pz);
       this.q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), [Math.PI / 2, 0, -Math.PI / 2, Math.PI][c.d]);
-      this.m.compose(this.p, this.q, this.s);
+      this.m.compose(this.p, this.q, c.truck ? this.truckScale : this.s);
       this.mesh.setMatrixAt(n, this.m);
+      this.mesh.setColorAt(n, c.truck ? this.truckColor : this.palette[c.col || 0]);
       this.lights.setMatrixAt(n, this.m);
       this.list[n++] = c;
     }
@@ -904,8 +917,11 @@ class PowerIcons {
     this.sprites = [];
   }
   update(w, time, zoom) {
-    const list = [];
-    if (w) for (let i = 0; i < w.N * w.N; i++) if (w.level[i] > 0 && !w.powered[i] && !w.abandoned[i] && w.zone[i]) list.push(i);
+    if (!this.list || w !== this.lw || time - (this.lt || 0) > 1) {
+      this.lw = w; this.lt = time; this.list = [];
+      if (w) for (let i = 0; i < w.N * w.N; i++) if (w.level[i] > 0 && !w.powered[i] && !w.abandoned[i] && w.zone[i] && !w.cons[i]) this.list.push(i);
+    }
+    const list = this.list;
     const vis = Math.sin(time * 5) > -0.3;
     while (this.sprites.length < Math.min(list.length, 600)) { const s = new THREE.Sprite(this.mat); s.renderOrder = 20; this.group.add(s); this.sprites.push(s); }
     const sc = Math.max(0.35, zoom * 0.03);
@@ -980,5 +996,143 @@ class Boats {
     this.mesh.count = Math.min(n, this.list.length + 0 === n ? n : n);
     this.mesh.instanceMatrix.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+  }
+}
+
+// ---------- vlaky ----------
+class Trains {
+  constructor(scene) {
+    this.max = 10; this.wag = 3;
+    const body = new THREE.BoxGeometry(0.3, 0.1, 0.12); body.translate(0, 0.08, 0);
+    const cab = new THREE.BoxGeometry(0.1, 0.07, 0.115); cab.translate(-0.07, 0.165, 0);
+    const nose = new THREE.BoxGeometry(0.06, 0.05, 0.1); nose.translate(0.17, 0.06, 0);
+    const wagon = new THREE.BoxGeometry(0.3, 0.11, 0.12); wagon.translate(0, 0.085, 0);
+    const roof = new THREE.BoxGeometry(0.29, 0.02, 0.1); roof.translate(0, 0.15, 0);
+    const mat = new THREE.MeshLambertMaterial();
+    this.loco = new THREE.InstancedMesh(mergeBoxes([body, cab, nose]), mat, this.max);
+    this.wagons = new THREE.InstancedMesh(mergeBoxes([wagon, roof]), mat, this.max * this.wag);
+    const lg = new THREE.BoxGeometry(0.02, 0.03, 0.09); lg.translate(0.205, 0.07, 0);
+    this.lightMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    this.lights = new THREE.InstancedMesh(lg, this.lightMat, this.max);
+    for (const m of [this.loco, this.wagons, this.lights]) { m.frustumCulled = false; m.count = 0; m.castShadow = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }
+    const lc = [0xc8352b, 0x2f5fa8, 0x2f8a4f, 0xe0a224], wc = [0x8a2a24, 0x3d5f8a, 0x6a7078, 0x7a5a3a, 0xd8d2c4];
+    for (let i = 0; i < this.max; i++) this.loco.setColorAt(i, new THREE.Color(lc[i % lc.length]));
+    for (let i = 0; i < this.max * this.wag; i++) this.wagons.setColorAt(i, new THREE.Color(wc[Math.floor(i / this.wag) % wc.length]));
+    scene.add(this.loco, this.wagons, this.lights);
+    this.list = []; this.m = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.p = new THREE.Vector3(); this.one = new THREE.Vector3(1, 1, 1); this.up = new THREE.Vector3(0, 1, 0);
+  }
+  reset() { this.list = []; this.loco.count = this.wagons.count = this.lights.count = 0; }
+  next(w, cur, prev) {
+    const N = w.N, x = cur % N, y = (cur / N) | 0, opts = [];
+    let straight = -1;
+    for (let d = 0; d < 4; d++) {
+      const xx = x + [0, 1, 0, -1][d], yy = y + [-1, 0, 1, 0][d];
+      if (!w.inb(xx, yy)) continue;
+      const j = yy * N + xx;
+      if (j === prev || !w.rail[j]) continue;
+      opts.push(j);
+      if (prev >= 0 && j - cur === cur - prev) straight = j;
+    }
+    if (!opts.length) return -1;
+    if (straight >= 0 && Math.random() < 0.75) return straight;
+    return opts[Math.floor(Math.random() * opts.length)];
+  }
+  // bod na hrane medzi dvoma políčkami (koľaje v oblúku idú po tetive)
+  pt(w, a, b) {
+    const N = w.N;
+    return [((a % N) + (b % N)) / 2 + 0.5, (((a / N) | 0) + ((b / N) | 0)) / 2 + 0.5];
+  }
+  posAt(w, P, s) {
+    const nQ = P.length - 1;
+    let idx = Math.floor(s), f = s - idx;
+    if (idx < 0) { idx = 0; f = 0; }
+    if (idx >= nQ - 1) { idx = nQ - 2; f = 1; }
+    const a = this.pt(w, P[idx], P[idx + 1]), b = this.pt(w, P[idx + 1], P[idx + 2]);
+    const x = a[0] + (b[0] - a[0]) * f, z = a[1] + (b[1] - a[1]) * f;
+    const ti = w.ti(Math.min(w.N - 1, Math.max(0, Math.floor(x))), Math.min(w.N - 1, Math.max(0, Math.floor(z))));
+    const y = w.water[ti] ? SEA * HS + 0.36 : w.heightAt(x, z) * HS + 0.05;
+    return [x, y, z, Math.atan2(-(b[1] - a[1]), b[0] - a[0])];
+  }
+  update(dt, w, sim, night) {
+    if (!w || !sim || !sim.stations) return;
+    const act = sim.stations.filter(st => st.active && st.tiles.length);
+    const target = Math.min(this.max, Math.ceil(act.length * 0.75));
+    const stopTiles = this.stopTiles = new Set(); for (const st of act) for (const t of st.tiles) stopTiles.add(t);
+    let guard = 0;
+    while (this.list.length < target && guard++ < 5) {
+      const st = act[Math.floor(Math.random() * act.length)];
+      const t0 = st.tiles[Math.floor(Math.random() * st.tiles.length)];
+      const P = [t0]; let prev = -1, cur = t0;
+      for (let k = 0; k < 5; k++) { const nx = this.next(w, cur, prev); if (nx < 0) break; P.push(nx); prev = cur; cur = nx; }
+      if (P.length < 3) break;
+      this.list.push({ P, s: P.length - 2.01, v: 1.3 + Math.random() * 0.4, wait: 1.5, lastStop: t0 });
+    }
+    if (this.list.length > target) this.list.length = target;
+    const W = (this.wag) * 0.42;
+    let n = 0, nw = 0;
+    for (const tr of this.list) {
+      if (tr.P.some(t => !w.rail[t])) { tr.dead = true; continue; }
+      if (tr.wait > 0) tr.wait -= dt;
+      else {
+        tr.s += tr.v * dt;
+        let loops = 0;
+        while (tr.s > tr.P.length - 2 && loops++ < 4) {
+          const last = tr.P[tr.P.length - 1], prev = tr.P[tr.P.length - 2];
+          const nx = this.next(w, last, prev);
+          if (nx < 0) { // slepá koľaj: vlak sa otočí
+            tr.P.reverse(); tr.s = Math.max(0, (tr.P.length - 2) - Math.max(0, tr.s - W)); tr.wait = 1.2; break;
+          }
+          tr.P.push(nx);
+          if (tr.P.length > 14) { tr.P.shift(); tr.s -= 1; }
+          if (stopTiles.has(nx) && nx !== tr.lastStop) { tr.lastStop = nx; tr.wait = 1.8; }   // zastávka v stanici
+        }
+      }
+      const parts = [tr.s];
+      for (let k = 1; k <= this.wag; k++) parts.push(tr.s - k * 0.42);
+      parts.forEach((a, k) => {
+        const [x, y, z, ang] = this.posAt(w, tr.P, a);
+        this.p.set(x, y, z); this.q.setFromAxisAngle(this.up, ang); this.m.compose(this.p, this.q, this.one);
+        if (k === 0) { this.loco.setMatrixAt(n, this.m); this.lights.setMatrixAt(n, this.m); }
+        else this.wagons.setMatrixAt(n * this.wag + k - 1, this.m);
+      });
+      n++;
+    }
+    this.list = this.list.filter(t => !t.dead);
+    this.loco.count = this.lights.count = n; this.wagons.count = n * this.wag;
+    for (const m of [this.loco, this.wagons, this.lights]) m.instanceMatrix.needsUpdate = true;
+    this.lightMat.color.setRGB(0.4 + 2.4 * night, 0.4 + 2.1 * night, 0.3 + 1.3 * night);
+  }
+}
+
+// ---------- lietadlá nad letiskom ----------
+class Planes {
+  constructor(scene) {
+    const f = new THREE.BoxGeometry(0.7, 0.09, 0.1); const wg = new THREE.BoxGeometry(0.16, 0.025, 0.8); wg.translate(0.02, 0, 0);
+    const tl = new THREE.BoxGeometry(0.1, 0.16, 0.025); tl.translate(-0.3, 0.1, 0); const ts = new THREE.BoxGeometry(0.08, 0.02, 0.3); ts.translate(-0.3, 0.03, 0);
+    this.mesh = new THREE.InstancedMesh(mergeBoxes([f, wg, tl, ts]), new THREE.MeshLambertMaterial({ color: 0xf2f2f2 }), 3);
+    const lg = new THREE.BoxGeometry(0.05, 0.05, 0.05); lg.translate(0.02, 0, 0.42);
+    this.lmat = new THREE.MeshBasicMaterial({ color: 0xff2020 });
+    this.lights = new THREE.InstancedMesh(lg, this.lmat, 3);
+    for (const m of [this.mesh, this.lights]) { m.frustumCulled = false; m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }
+    this.mesh.castShadow = true;
+    scene.add(this.mesh, this.lights);
+    this.m = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.e = new THREE.Euler(); this.p = new THREE.Vector3(); this.one = new THREE.Vector3(1, 1, 1); this.t = 0;
+  }
+  update(dt, w, time) {
+    let ap = null;
+    if (w) for (const b of w.buildings.values()) if (b.type === 'airport' && !(b.cons > 0)) { ap = b; break; }
+    if (!ap) { this.mesh.count = this.lights.count = 0; return; }
+    this.t += dt;
+    const cx = ap.x + 3, cz = ap.y + 3, n = 2;
+    for (let k = 0; k < n; k++) {
+      const a = this.t * (0.12 + k * 0.03) + k * 3.1, R = 9 + k * 5, h = 3.2 + k * 0.8 + Math.sin(this.t * 0.3 + k) * 0.3;
+      this.p.set(cx + Math.cos(a) * R, h, cz + Math.sin(a) * R);
+      this.e.set(-0.25, -a - Math.PI / 2, 0, 'YXZ'); this.q.setFromEuler(this.e);
+      this.m.compose(this.p, this.q, this.one);
+      this.mesh.setMatrixAt(k, this.m); this.lights.setMatrixAt(k, this.m);
+    }
+    this.mesh.count = this.lights.count = n;
+    this.mesh.instanceMatrix.needsUpdate = this.lights.instanceMatrix.needsUpdate = true;
+    this.lights.visible = Math.sin(time * 6) > 0;
   }
 }

@@ -6,10 +6,11 @@ const TILE_ARRAYS = {
   road: Uint8Array, pline: Uint8Array, pipe: Uint8Array, tree: Uint8Array, bid: Int32Array,
   fire: Uint8Array, rubble: Uint8Array, powered: Uint8Array, watered: Uint8Array, abandoned: Uint8Array,
   noPow: Uint8Array, roadAcc: Uint8Array, cons: Uint8Array, consTot: Uint8Array, consFrom: Uint8Array,
+  rail: Uint8Array, garbage: Uint8Array, garbCov: Uint8Array, trainCov: Uint8Array,
   lv: Uint8Array, poll: Uint8Array, crime: Uint8Array, traffic: Uint8Array,
   police: Uint8Array, fireCov: Uint8Array, health: Uint8Array, edu: Uint8Array, park: Uint8Array,
 };
-const SAVE_ARRAYS = ['zone', 'level', 'pop', 'variant', 'road', 'pline', 'pipe', 'tree', 'bid', 'rubble', 'abandoned', 'fire', 'cons', 'consTot', 'consFrom'];
+const SAVE_ARRAYS = ['zone', 'level', 'pop', 'variant', 'road', 'pline', 'pipe', 'tree', 'bid', 'rubble', 'abandoned', 'fire', 'cons', 'consTot', 'consFrom', 'rail', 'garbage'];
 // trvanie výstavby budov (v rýchlych krokoch simulácie) podľa veľkosti
 const B_CONS = { 1: 5, 2: 7, 3: 10, 4: 14, 6: 18 };
 
@@ -27,11 +28,12 @@ export class World {
     this.state = {
       name: 'Nové mesto', funds: 20000, year: 1950, month: 0, dayFrac: 0,
       tax: { R: 7, C: 7, I: 7 },
-      funding: { police: 100, fire: 100, health: 100, edu: 100, roads: 100 },
+      funding: { police: 100, fire: 100, health: 100, edu: 100, roads: 100, waste: 100 },
+      unburied: 0, deaths: 0,
       demand: { R: 0.6, C: 0.1, I: 0.5 },
       stats: { resPop: 0, comJobs: 0, indJobs: 0, powerSupply: 0, powerDemand: 0, waterSupply: 0, waterDemand: 0 },
       history: [], milestone: 0, disasters: true,
-      yearAcc: { taxR: 0, taxC: 0, taxI: 0, roads: 0, police: 0, fire: 0, health: 0, edu: 0, power: 0, other: 0 },
+      yearAcc: { taxR: 0, taxC: 0, taxI: 0, roads: 0, police: 0, fire: 0, health: 0, edu: 0, power: 0, waste: 0, other: 0 },
       lastYear: null,
     };
   }
@@ -230,14 +232,14 @@ export class World {
       this.updateWater(x, y);
       if (this.water[t]) { this.zone[t] = 0; this.tree[t] = 0; this.level[t] = 0; this.pipe[t] = 0; }
       const mn = this.tileMin(x, y), mx = this.tileMax(x, y);
-      if (mx - mn > 1 && !this.water[t]) { this.road[t] = 0; }
+      if (mx - mn > 1 && !this.water[t]) { this.road[t] = 0; this.rail[t] = 0; }
       this.markDirty(x, y);
     }
     this.terrainDirty = true;
   }
 
   // ---------- stavanie ----------
-  isEmpty(i) { return !this.road[i] && !this.pline[i] && !this.bid[i]; }
+  isEmpty(i) { return !this.road[i] && !this.pline[i] && !this.bid[i] && !this.rail[i]; }
 
   clearForBuild(i) { this.tree[i] = 0; this.rubble[i] = 0; this.zone[i] = 0; this.level[i] = 0; this.pop[i] = 0; this.abandoned[i] = 0; this.fire[i] = 0; this.cons[i] = 0; this.consFrom[i] = 0; }
 
@@ -246,12 +248,27 @@ export class World {
     const i = this.ti(x, y);
     if (this.road[i] || this.bid[i]) return false;
     if (this.level[i] > 0) return false;
+    if (this.rail[i] && this.water[i]) return false;
     if (this.water[i]) return true; // most
     return this.tileMax(x, y) - this.tileMin(x, y) <= 1;
   }
   placeRoad(x, y) {
     const i = this.ti(x, y);
     this.clearForBuild(i); this.road[i] = 1; this.markDirty(x, y);
+  }
+  // železnica: ako cesta, môže križovať cestu (železničné priecestie) a ísť po moste cez vodu
+  canRail(x, y) {
+    if (!this.inb(x, y)) return false;
+    const i = this.ti(x, y);
+    if (this.rail[i] || this.bid[i] || this.level[i] > 0) return false;
+    if (this.road[i] && this.water[i]) return false;
+    if (this.water[i]) return true;
+    return this.tileMax(x, y) - this.tileMin(x, y) <= 1;
+  }
+  placeRail(x, y) {
+    const i = this.ti(x, y);
+    const keepRoad = this.road[i], keepLine = this.pline[i];
+    this.clearForBuild(i); this.road[i] = keepRoad; this.pline[i] = keepLine; this.rail[i] = 1; this.markDirty(x, y);
   }
   canPline(x, y) {
     if (!this.inb(x, y)) return false;
@@ -260,8 +277,8 @@ export class World {
   }
   placePline(x, y) {
     const i = this.ti(x, y);
-    const keepRoad = this.road[i];
-    this.clearForBuild(i); this.road[i] = keepRoad; this.pline[i] = 1; this.markDirty(x, y);
+    const keepRoad = this.road[i], keepRail = this.rail[i];
+    this.clearForBuild(i); this.road[i] = keepRoad; this.rail[i] = keepRail; this.pline[i] = 1; this.markDirty(x, y);
   }
   canPipe(x, y) { return this.inb(x, y) && !this.pipe[this.ti(x, y)] && !this.water[this.ti(x, y)]; }
   placePipe(x, y) { this.pipe[this.ti(x, y)] = 1; this.markDirty(x, y); }
@@ -289,7 +306,7 @@ export class World {
       if (!this.inb(tx, ty)) return { ok: false, reason: 'Mimo mapy.' };
       const i = this.ti(tx, ty);
       if (this.water[i]) return { ok: false, reason: 'Nedá sa stavať na vode.' };
-      if (this.road[i] || this.pline[i] || this.bid[i]) return { ok: false, reason: 'Pozemok je obsadený.' };
+      if (this.road[i] || this.pline[i] || this.bid[i] || this.rail[i]) return { ok: false, reason: 'Pozemok je obsadený.' };
       if (this.level[i] > 0) return { ok: false, reason: 'Pozemok je zastavaný.' };
     }
     if (def.needsWaterEdge) {
@@ -299,6 +316,15 @@ export class World {
         if (this.inb(tx, ty) && this.water[this.ti(tx, ty)]) { found = true; break; }
       }
       if (!found) return { ok: false, reason: 'Musí susediť s vodou.' };
+    }
+    if (def.needsRailEdge) {
+      let found = false;
+      for (let dy = -1; dy <= s && !found; dy++) for (let dx = -1; dx <= s; dx++) {
+        const tx = x + dx, ty = y + dy;
+        if ((dx === -1 || dx === s) && (dy === -1 || dy === s)) continue; // rohy sa nepočítajú
+        if (this.inb(tx, ty) && this.rail[this.ti(tx, ty)]) { found = true; break; }
+      }
+      if (!found) return { ok: false, reason: 'Stanica musí susediť so železnicou.' };
     }
     return { ok: true };
   }
@@ -337,7 +363,7 @@ export class World {
     }
     if (this.bid[i]) { this.removeBuilding(this.bid[i]); return 10; }
     if (this.level[i] > 0) { this.level[i] = 0; this.pop[i] = 0; this.abandoned[i] = 0; this.zone[i] = 0; this.fire[i] = 0; this.cons[i] = 0; this.markDirty(x, y); return 5; }
-    if (this.road[i] || this.pline[i]) { const c = this.water[i] ? 5 : 1; this.road[i] = 0; this.pline[i] = 0; this.markDirty(x, y); return c; }
+    if (this.road[i] || this.pline[i] || this.rail[i]) { const c = this.water[i] ? 5 : 1; this.road[i] = 0; this.pline[i] = 0; this.rail[i] = 0; this.markDirty(x, y); return c; }
     if (this.rubble[i] || this.tree[i]) { this.rubble[i] = 0; this.tree[i] = 0; this.markDirty(x, y); return 1; }
     if (this.zone[i]) { this.zone[i] = 0; this.markDirty(x, y); return 1; }
     return 0;
@@ -365,7 +391,12 @@ export class World {
     dec(o.h, w.h);
     for (const k of SAVE_ARRAYS) if (o[k]) dec(o[k], w[k]);
     w.nextId = o.nextId;
+    const defFunding = { ...w.state.funding }, defAcc = { ...w.state.yearAcc };
     Object.assign(w.state, o.state);
+    // staršie uložené hry nemajú nové položky
+    w.state.funding = { ...defFunding, ...(o.state.funding || {}) };
+    w.state.yearAcc = { ...defAcc, ...(o.state.yearAcc || {}) };
+    w.state.unburied = w.state.unburied || 0; w.state.deaths = w.state.deaths || 0;
     for (const b of o.buildings) w.buildings.set(b.id, b);
     for (let y = 0; y < w.N; y++) for (let x = 0; x < w.N; x++) w.updateWater(x, y);
     w.markAllDirty();

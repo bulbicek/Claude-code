@@ -1,6 +1,7 @@
 import { HS, FLOOR, SEA, zoneKind, zoneDense, BUILDINGS } from './config.js';
 import { col, shade, mix } from './geom.js';
 import { rng } from './noise.js';
+import { extraBuilding } from './extrageo.js';
 
 const C = {
   asphalt: col(0x3d4046), side: col(0xa7a69c), dash: col(0xe8d36a), white: col(0xeeeeea),
@@ -22,10 +23,10 @@ const LEAF = [0x3d7a2c, 0x4b8a32, 0x2f6b2a, 0x5a9a3a, 0x3a6e3a, 0x6a9a34].map(co
 const CARC = [0xc8352b, 0x2f5fa8, 0xeeeeea, 0x2b2b2b, 0xe0a224, 0x3d8a4a].map(col);
 
 // ---------- pomocné ----------
-function surfY(w, x, z) { return w.heightAt(x, z) * HS; }
+export function surfY(w, x, z) { return w.heightAt(x, z) * HS; }
 
 // plošný obdĺžnik kopírujúci terén
-function decal(gb, w, x0, z0, x1, z1, color, lift, sub = 2, glow) {
+export function decal(gb, w, x0, z0, x1, z1, color, lift, sub = 2, glow) {
   for (let j = 0; j < sub; j++) for (let i = 0; i < sub; i++) {
     const ax = x0 + (x1 - x0) * i / sub, bx = x0 + (x1 - x0) * (i + 1) / sub;
     const az = z0 + (z1 - z0) * j / sub, bz = z0 + (z1 - z0) * (j + 1) / sub;
@@ -248,10 +249,11 @@ export function serviceBuilding(gb, w, b, emit, night) {
   const cx = x + s / 2, cz = y + s / 2;
   const r = rng(b.id * 131 + 7);
   const t = b.type;
-  const isPark = t === 'park' || t === 'bigpark' || t === 'fountain';
-  const base = plinth(gb, w, x, y, s, isPark ? C.grass : t === 'airport' ? col(0x8a9a7a) : C.concrete);
+  const isPark = BUILDINGS[t].cat === 'park' || t === 'cemetery' || t === 'crematorium';
+  const base = plinth(gb, w, x, y, s, isPark ? C.grass : t === 'airport' ? col(0x8a9a7a) : t === 'landfill' ? col(0x7a6450) : C.concrete);
   const B = base;
   const winLit = 0.6;
+  if (extraBuilding(gb, w, b, emit, B, cx, cz, r)) return;
   switch (t) {
     case 'coal': {
       gb.box(cx - 0.5, B, cz - 0.3, 2.2, 0.9, 1.7, C.brick, { top: C.roofGray });

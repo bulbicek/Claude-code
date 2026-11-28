@@ -6,7 +6,7 @@ const el = (tag, attrs = {}, html = '') => { const e = document.createElement(ta
 
 export const OVERLAYS = [
   [null, 'Žiadna (normálny pohľad)'], ['power', 'Elektrina'], ['water', 'Voda'], ['lv', 'Hodnota pozemkov'],
-  ['poll', 'Znečistenie'], ['crime', 'Kriminalita'], ['traffic', 'Doprava'], ['pop', 'Hustota obyvateľov'],
+  ['poll', 'Znečistenie'], ['crime', 'Kriminalita'], ['traffic', 'Doprava'], ['pop', 'Hustota obyvateľov'], ['garbage', 'Odpad a zvoz smetí'], ['train', 'Pokrytie vlakom'],
   ['police', 'Pokrytie políciou'], ['fire', 'Pokrytie hasičmi'], ['health', 'Zdravotníctvo'], ['edu', 'Vzdelanie'],
 ];
 
@@ -140,6 +140,18 @@ export class UI {
 
   status(msg) { $('#status').textContent = msg; }
 
+  // krátke oznámenie uprostred obrazovky (napr. „Hra bola uložená“)
+  toast(msg, kind = 'ok', ms = 2400, small = false) {
+    const host = $('#toasts'); if (!host) return;
+    const t = el('div', { className: `toast ${kind}${small ? ' small' : ''}` });
+    t.innerHTML = `<div class="tt">${kind === 'ok' ? 'Hotovo' : 'Chyba'}</div><div class="tb"></div>`;
+    t.querySelector('.tb').textContent = msg;
+    host.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, ms);
+    while (host.children.length > 3) host.firstChild.remove();
+  }
+
   pushNews(msg, type = 'info') {
     this.news.push({ msg, type });
     if (this.news.length > 6) this.news.shift();
@@ -215,20 +227,20 @@ export class UI {
     const rows = [
       ['Dane – bývanie', 'taxR'], ['Dane – obchod', 'taxC'], ['Dane – priemysel', 'taxI'],
     ];
-    const exps = [['Doprava (cesty)', 'roads'], ['Polícia', 'police'], ['Hasiči', 'fire'], ['Zdravotníctvo', 'health'], ['Školstvo', 'edu'], ['Energetika a voda', 'power'], ['Ostatné', 'other']];
+    const exps = [['Doprava (cesty)', 'roads'], ['Polícia', 'police'], ['Hasiči', 'fire'], ['Zdravotníctvo', 'health'], ['Školstvo', 'edu'], ['Energetika a voda', 'power'], ['Odpad', 'waste'], ['Ostatné', 'other']];
     const fm = v => fmtMoney(v || 0);
     const html = `
       <table class="budget">
         <tr><td></td><td class="n">Tento rok</td><td class="n">Minulý rok</td></tr>
         ${rows.map(([n, k]) => `<tr><td>${n}</td><td class="n">${fm(a[k])}</td><td class="n">${ly ? fm(ly[k]) : '—'}</td></tr>`).join('')}
         ${exps.map(([n, k]) => `<tr><td>${n}</td><td class="n">${fm(-a[k])}</td><td class="n">${ly ? fm(-ly[k]) : '—'}</td></tr>`).join('')}
-        <tr class="tot"><td>Bilancia</td><td class="n">${fm(a.taxR + a.taxC + a.taxI - a.roads - a.police - a.fire - a.health - a.edu - a.power - a.other)}</td><td class="n">${ly ? fm(ly.income - ly.expense) : '—'}</td></tr>
+        <tr class="tot"><td>Bilancia</td><td class="n">${fm(a.taxR + a.taxC + a.taxI - a.roads - a.police - a.fire - a.health - a.edu - a.power - (a.waste || 0) - a.other)}</td><td class="n">${ly ? fm(ly.income - ly.expense) : '—'}</td></tr>
         <tr><td>Pokladnica</td><td class="n">${fm(st.funds)}</td><td></td></tr>
       </table>
       <h4 style="margin:10px 0 4px">Dane (%)</h4>
       ${['R', 'C', 'I'].map(k => `<div class="row"><label>${{ R: 'Bývanie', C: 'Obchod', I: 'Priemysel' }[k]}</label><input type="range" min="0" max="20" value="${st.tax[k]}" data-tax="${k}"><span class="val">${st.tax[k]} %</span></div>`).join('')}
       <h4 style="margin:10px 0 4px">Financovanie (%)</h4>
-      ${[['roads', 'Doprava'], ['police', 'Polícia'], ['fire', 'Hasiči'], ['health', 'Zdravotníctvo'], ['edu', 'Školstvo']].map(([k, n]) => `<div class="row"><label>${n}</label><input type="range" min="0" max="100" step="5" value="${st.funding[k]}" data-fund="${k}"><span class="val">${st.funding[k]} %</span></div>`).join('')}
+      ${[['roads', 'Doprava'], ['police', 'Polícia'], ['fire', 'Hasiči'], ['health', 'Zdravotníctvo'], ['edu', 'Školstvo'], ['waste', 'Odpad']].map(([k, n]) => `<div class="row"><label>${n}</label><input type="range" min="0" max="100" step="5" value="${st.funding[k]}" data-fund="${k}"><span class="val">${st.funding[k]} %</span></div>`).join('')}
       <div class="btns"><button class="ok">OK</button></div>`;
     const d = this.dialog('Rozpočet mesta', html, { width: 420, id: 'budget' });
     d.querySelectorAll('[data-tax]').forEach(i => i.oninput = () => { st.tax[i.dataset.tax] = +i.value; i.nextElementSibling.textContent = i.value + ' %'; });
@@ -255,7 +267,7 @@ export class UI {
       };
       line('pop', '#3d3'); line('jobs', '#47f'); line('funds', '#fb2');
       const s = this.g.world.state.stats;
-      d.querySelector('#gr-stats').innerHTML = `Elektrina: ${Math.round(s.powerDemand)}/${Math.round(s.powerSupply)} MW &nbsp; Voda: ${Math.round(s.waterDemand)}/${Math.round(s.waterSupply)} &nbsp; Obchod: ${fmtNum(s.comJobs)} &nbsp; Priemysel: ${fmtNum(s.indJobs)}`;
+      d.querySelector('#gr-stats').innerHTML = `Elektrina: ${Math.round(s.powerDemand)}/${Math.round(s.powerSupply)} MW &nbsp; Voda: ${Math.round(s.waterDemand)}/${Math.round(s.waterSupply)} &nbsp; Obchod: ${fmtNum(s.comJobs)} &nbsp; Priemysel: ${fmtNum(s.indJobs)}<br>Odpad: ${fmtNum(s.garbageProd || 0)}/${fmtNum(s.garbageCap || 0)} za mesiac &nbsp; Voľné hroby: ${fmtNum(s.cemeteryFree || 0)} &nbsp; Nepochovaní: ${fmtNum(this.g.world.state.unburied || 0)}`;
       setTimeout(draw, 1000);
     };
     draw();
@@ -291,6 +303,10 @@ export class UI {
       <p><b>Myš:</b> ľavé tlačidlo – použiť nástroj (ťahaním cesty, vedenia, zóny); pravé/stredné tlačidlo – posun mapy (počas ťahania pravé tlačidlo akciu zruší); tlačidlo <b>↶ Späť</b> vráti poslednú stavbu aj s peniazmi; koliesko – zoom. Pravý klik na ikonu – posledný nástroj zo skupiny.</p>
       <p><b>Klávesy:</b> <kbd>WASD</kbd>/šípky posun, <kbd>Q</kbd>/<kbd>E</kbd> otáčanie, <kbd>+</kbd>/<kbd>-</kbd> zoom, <kbd>Medzera</kbd> pauza, <kbd>1</kbd>-<kbd>3</kbd> rýchlosť, <kbd>Esc</kbd> zrušiť rozpracovanú akciu / info nástroj, <kbd>Ctrl+Z</kbd> späť, <kbd>B</kbd> buldozér, <kbd>R</kbd> cesta, <kbd>G</kbd> mriežka, <kbd>U</kbd> podzemie (potrubie), <kbd>Ctrl+S</kbd> uložiť.</p>
       <p><b>Tipy:</b> hustá zástavba potrebuje vodu (čerpadlá + potrubie), hodnota pozemkov rastie pri vode, parkoch a službách, klesá so znečistením a kriminalitou. Pri veľkom meste treba štadión, letisko a prístav.</p>
+      <p><b>Odpad:</b> každá budova produkuje smeti. Skládka je lacná, ale znečisťuje a postupne sa zaplní; spaľovňa vyrába aj elektrinu; recyklácia (od 1975) skoro neznečisťuje. Nezvezené smeti znižujú hodnotu pozemkov a rast (mapa „Odpad“).</p>
+      <p><b>Cintoríny:</b> obyvatelia umierajú (menej s dobrou zdravotníckou starostlivosťou). Bez cintorína alebo krematória klesá záujem o bývanie. Cintorín sa postupne plní.</p>
+      <p><b>Vlaky:</b> postavte trať (Doprava → Železnica) a aspoň dve stanice pri trati. Vlaky odľahčia cesty v okolí staníc a zvýšia hodnotu pozemkov. Trať môže križovať cestu a viesť po moste cez vodu.</p>
+      <p><b>Ukladanie:</b> tlačidlo 💾 hore alebo <kbd>Ctrl+S</kbd>. Hra sa ukladá aj automaticky a pri ďalšom spustení sa rovno nahrá posledné mesto.</p>
       <p style="color:#555">Verzia: ${(document.querySelector('meta[name=app-version]') || {}).content || '?'} · <a href="?reset">vymazať cache a načítať znova</a></p>
     </div><div class="btns"><button class="ok">Zavrieť</button></div>`, { width: 520, id: 'help' }).querySelector('.ok').onclick = function () { this.closest('.win')._close(); };
   }
@@ -317,6 +333,11 @@ export class UI {
       const b = w.buildings.get(w.bid[i]), d = BUILDINGS[b.type];
       if (d.power) extra += `<span>Výkon</span><span>${d.power} MW</span>`;
       if (d.water) extra += `<span>Čerpanie</span><span>${d.water}</span>`;
+      if (d.capacity) extra += `<span>Zaplnenie</span><span>${Math.round(Math.min(1, (b.fill || 0) / d.capacity) * 100)} %</span>`;
+      if (d.graves) extra += `<span>Hroby</span><span>${fmtNum(b.fill || 0)} / ${fmtNum(d.graves)}</span>`;
+      if (d.garbage) extra += `<span>Zvoz</span><span>${fmtNum(d.garbage)} / mesiac</span>`;
+      if (d.cremate) extra += `<span>Kapacita</span><span>${d.cremate} / mesiac</span>`;
+      if (b.type === 'station') { const st = (this.g.sim.stations || []).find(q => q.b === b); extra += `<span>Spojenie</span><span>${st && st.active ? 'áno – vlaky jazdia' : '<b style="color:#c00">nie – treba 2. stanicu na trati</b>'}</span>`; }
       extra += `<span>Údržba</span><span>${fmtMoney(d.upkeep)}/rok</span>`;
     }
     this.dialog('Informácie', `<div class="info-grid">
@@ -333,6 +354,8 @@ export class UI {
       <span>Doprava</span><span>${meter(w.traffic[i], '#cc3')}</span>
       <span>Polícia</span><span>${meter(w.police[i], '#36c')}</span>
       <span>Hasiči</span><span>${meter(w.fireCov[i], '#f63')}</span>
+      <span>Smeti</span><span>${meter(w.garbage[i], '#7a5a2a')}</span>
+      <span>Vlak</span><span>${meter(w.trainCov[i], '#c9a227')}</span>
     </div>`, { width: 320, id: 'info', x: window.innerWidth - 340, y: 60 });
   }
 
@@ -344,6 +367,8 @@ export class UI {
     if (overlay === 'power') { grad = 'linear-gradient(90deg,#ffe14d 50%,#d4302b 50%)'; lo = 'napájané'; hi = 'bez prúdu'; }
     if (overlay === 'water') { grad = 'linear-gradient(90deg,#3fa0ff 50%,#d4302b 50%)'; lo = 's vodou'; hi = 'bez vody'; }
     if (overlay === 'lv') grad = 'linear-gradient(90deg,#4a2a6a,#5fe08a)';
+    if (overlay === 'garbage') { lo = 'čisto'; hi = 'plno smetí'; }
+    if (overlay === 'train') { grad = 'linear-gradient(90deg,#3a3a3a,#5fe08a)'; lo = 'bez vlaku'; hi = 'pri stanici'; }
     if (['police', 'fire', 'edu', 'health'].includes(overlay)) { grad = `linear-gradient(90deg,#3a3a3a,${{ police: '#3f7bff', fire: '#ff6a2b', edu: '#f2d33a', health: '#ff5fa0' }[overlay]})`; lo = 'žiadne'; hi = 'silné'; }
     L.innerHTML = `<div class="title"><span>${name}</span><button id="lgx">✕</button></div><div class="grad" style="background:${grad}"></div><div class="lbl"><span>${lo}</span><span>${hi}</span></div>`;
     L.classList.remove('hidden');

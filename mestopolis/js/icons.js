@@ -40,6 +40,9 @@ const ICONS = {
   parks: [
     '.....gg.....', '....gGGg....', '...gGGGGg...', '..gGGGGGGg..', '..gGGGGGGg..', '...gGGGGg...',
     '....gGGg....', '.....NN.....', '.....NN.....', '.....NN.....', '.GGGGGGGGGG.', '............'],
+  waste: [
+    '............', '...ssssss...', '..SSSSSSSS..', '...ssssss...', '...gGgGgG...', '...gGgGgG...',
+    '...gGgGgG...', '...gGgGgG...', '...gGgGgG...', '...gGgGgG...', '....gggg....', '............'],
   special: [
     '.....Y......', '.....Y......', '....YYY.....', 'YYYYYYYYYYY.', '.YYYYYYYYY..', '..YYYYYYY...',
     '...YYYYY....', '..YYY.YYY...', '..YY...YY...', '.YY.....YY..', '.Y.......Y..', '............'],
