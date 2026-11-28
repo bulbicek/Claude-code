@@ -479,6 +479,9 @@ export class Renderer {
     this.gl.setSize(W, H, false);
     const rw = Math.max(1, Math.floor(W * ratio / px)), rh = Math.max(1, Math.floor(H * ratio / px));
     this.rt.setSize(rw, rh);
+    const bw = Math.max(1, Math.floor(rw / 4)), bh = Math.max(1, Math.floor(rh / 4));
+    for (const t of [this.bloomA, this.bloomB, this.blurA, this.blurB]) t.setSize(bw, bh);
+    this.bw = bw; this.bh = bh;
     this.postMat.uniforms.res.value.set(rw, rh);
     this.aspect = W / H;
   }
@@ -561,13 +564,13 @@ export class Renderer {
     this.postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.postMat = new THREE.ShaderMaterial({
       uniforms: {
-        tDiffuse: { value: this.rt.texture }, res: { value: new THREE.Vector2(4, 4) },
+        tDiffuse: { value: this.rt.texture }, tBloom: { value: null }, tBlur: { value: null }, res: { value: new THREE.Vector2(4, 4) },
         dither: { value: 1 }, levels: { value: 28 }, skyTop: { value: new THREE.Color() }, skyBot: { value: new THREE.Color() },
         night: { value: 0 }, exposure: { value: 1.0 }, time: { value: 0 }, tilt: { value: 0 }, bloom: { value: 0.5 }, vig: { value: 0.28 },
       },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
       fragmentShader: `
-        uniform sampler2D tDiffuse; uniform vec2 res; uniform float dither, levels, night, exposure, time, tilt, bloom, vig;
+        uniform sampler2D tDiffuse, tBloom, tBlur; uniform vec2 res; uniform float dither, levels, night, exposure, time, tilt, bloom, vig;
         uniform vec3 skyTop, skyBot; varying vec2 vUv;
         float bayer(vec2 p){
           int x = int(mod(p.x, 4.0)), y = int(mod(p.y, 4.0));
@@ -582,23 +585,12 @@ export class Renderer {
         void main(){
           vec2 px = 1.0 / res;
           vec4 c = S(vUv);
-          // miniatúrny (tilt-shift) efekt: pri oddialení sa hore a dole rozostrí
-          float tamt = smoothstep(0.2, 0.52, abs(vUv.y - 0.5)) * tilt;
-          if (tamt > 0.02) {
-            float rad = tamt * 5.0; vec4 acc = c;
-            for (int k = 0; k < 8; k++) { float a = float(k) * 0.7853982 + 0.3; acc += S(vUv + vec2(cos(a), sin(a)) * rad * px * (mod(float(k), 2.0) < 0.5 ? 1.0 : 0.55)); }
-            c = acc / 9.0;
-          }
+          // miniatúrny (tilt-shift) efekt: plynulý prechod do rozmazaného obrazu hore a dole
+          float tamt = smoothstep(0.2, 0.55, abs(vUv.y - 0.5)) * tilt;
+          if (tamt > 0.01) c = mix(c, texture2D(tBlur, vUv), clamp(tamt * 1.6, 0.0, 1.0));
           vec3 rgb = c.rgb;
-          // bloom: veľmi jasné (HDR) body – nočné okná, lampy, odlesky na vode – žiaria do okolia
-          if (bloom > 0.01) {
-            vec3 b = vec3(0.0); float R = max(1.0, res.y / 300.0);
-            for (int k = 0; k < 12; k++) {
-              float a = float(k) * 2.399963, rr = sqrt((float(k) + 0.5) / 12.0) * 6.5 * R;
-              b += max(min(S(vUv + vec2(cos(a), sin(a)) * rr * px).rgb, vec3(3.0)) - vec3(1.35), vec3(0.0));
-            }
-            rgb += b / 12.0 * bloom * 1.8;
-          }
+          // bloom: mäkká žiara okolo jasných svetiel (vopred rozmazaná v menšom rozlíšení)
+          rgb += texture2D(tBloom, vUv).rgb * bloom;
           vec2 pix = floor(vUv * res);
           vec3 bg = mix(skyBot, skyTop, smoothstep(0.0, 1.0, vUv.y));
           float st = step(0.997, hash(pix)) * night * (0.5 + 0.5 * sin(time * 2.0 + hash(pix + 3.0) * 30.0));
@@ -621,6 +613,39 @@ export class Renderer {
         }`,
       depthTest: false, depthWrite: false,
     });
+    // rozmazávací reťazec v 1/4 rozlíšení: jasné časti (bloom) a celý obraz (tilt-shift)
+    const mk = () => new THREE.WebGLRenderTarget(4, 4, { type: hf ? THREE.HalfFloatType : THREE.UnsignedByteType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+    this.bloomA = mk(); this.bloomB = mk(); this.blurA = mk(); this.blurB = mk();
+    const vs = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+    this.downMat = new THREE.ShaderMaterial({
+      uniforms: { src: { value: null }, texel: { value: new THREE.Vector2() }, mode: { value: 0 } },
+      vertexShader: vs, depthTest: false, depthWrite: false,
+      fragmentShader: `uniform sampler2D src; uniform vec2 texel; uniform float mode; varying vec2 vUv;
+        void main(){
+          // priemer 4x4 pixelov zdroja (zmenšenie bez zubatých okrajov)
+          vec4 acc = vec4(0.0);
+          for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) acc += texture2D(src, vUv + (vec2(float(i), float(j)) - 1.5) * texel);
+          acc /= 16.0;
+          if (mode < 0.5) { vec3 c = min(acc.rgb, vec3(6.0)); float l = max(c.r, max(c.g, c.b)); float k = smoothstep(0.9, 1.6, l); gl_FragColor = vec4(c * k, 1.0); }
+          else gl_FragColor = acc;
+        }`,
+    });
+    this.blurMat = new THREE.ShaderMaterial({
+      uniforms: { src: { value: null }, dir: { value: new THREE.Vector2() } },
+      vertexShader: vs, depthTest: false, depthWrite: false,
+      fragmentShader: `uniform sampler2D src; uniform vec2 dir; varying vec2 vUv;
+        void main(){
+          // 9-bodový Gaussov filter (s lineárnym vzorkovaním = plynulé rozmazanie bez vzoru)
+          vec4 c = texture2D(src, vUv) * 0.2270270270;
+          c += (texture2D(src, vUv + dir * 1.3846153846) + texture2D(src, vUv - dir * 1.3846153846)) * 0.3162162162;
+          c += (texture2D(src, vUv + dir * 3.2307692308) + texture2D(src, vUv - dir * 3.2307692308)) * 0.0702702703;
+          gl_FragColor = c;
+        }`,
+    });
+    this.fsScene = new THREE.Scene();
+    this.fsQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.downMat);
+    this.fsQuad.frustumCulled = false;
+    this.fsScene.add(this.fsQuad);
     const q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.postMat);
     q.frustumCulled = false;
     this.postScene.add(q);
@@ -679,7 +704,7 @@ export class Renderer {
     const zm = this.view.zoom;
     const fx = this.settings.fx !== false;
     this.postMat.uniforms.tilt.value = fx ? smoothstep(11, 38, zm) * 0.85 : 0;
-    this.postMat.uniforms.bloom.value = fx ? lerp(0.5, 0.9, this.night || 0) : 0;
+    this.postMat.uniforms.bloom.value = fx ? lerp(0.35, 0.8, this.night || 0) : 0;
     this.uniforms.uGrid.value = this.settings.grid ? 1 : 0;
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 0.6);
     if (this.resMode() !== this._mode) this.resize();
@@ -696,7 +721,33 @@ export class Renderer {
     g.clear();
     g.render(this.scene, this.cam);
     g.setRenderTarget(null);
+    this.postEffects();
+    g.setRenderTarget(null);
     g.render(this.postScene, this.postCam);
+  }
+
+  fsPass(mat, target) { this.fsQuad.material = mat; this.gl.setRenderTarget(target); this.gl.render(this.fsScene, this.postCam); }
+  blurChain(a, b, passes) {
+    for (let k = 0; k < passes; k++) {
+      const st = 1 + k;   // každý ďalší prechod širší
+      this.blurMat.uniforms.src.value = a.texture; this.blurMat.uniforms.dir.value.set(st / this.bw, 0); this.fsPass(this.blurMat, b);
+      this.blurMat.uniforms.src.value = b.texture; this.blurMat.uniforms.dir.value.set(0, st / this.bh); this.fsPass(this.blurMat, a);
+    }
+  }
+  postEffects() {
+    const u = this.postMat.uniforms;
+    const texel = this.downMat.uniforms.texel.value.set(1 / this.rt.width, 1 / this.rt.height);
+    this.downMat.uniforms.src.value = this.rt.texture;
+    if (u.bloom.value > 0.001) {
+      this.downMat.uniforms.mode.value = 0; this.fsPass(this.downMat, this.bloomA);
+      this.blurChain(this.bloomA, this.bloomB, 2);
+    } else { this.gl.setRenderTarget(this.bloomA); this.gl.setClearColor(0x000000, 0); this.gl.clear(); }
+    u.tBloom.value = this.bloomA.texture;
+    if (u.tilt.value > 0.01) {
+      this.downMat.uniforms.mode.value = 1; this.fsPass(this.downMat, this.blurA);
+      this.blurChain(this.blurA, this.blurB, 2);
+    }
+    u.tBlur.value = this.blurA.texture;
   }
 
   // dym z komínov a oheň
